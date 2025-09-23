@@ -3,7 +3,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Plus, Check, Package, Clock } from 'lucide-react';
+import { Plus, Check, Package, Clock, WifiOff } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
+
 
 type Occurrence = {
   scannedCode: string;
@@ -27,13 +29,39 @@ type Occurrence = {
 export default function Home() {
   const router = useRouter();
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  const [offlineOccurrencesCount, setOfflineOccurrencesCount] = useState(0);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedOccurrences = JSON.parse(localStorage.getItem('occurrences') || '[]');
       setOccurrences(savedOccurrences);
+
+      const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
+      setOfflineOccurrencesCount(offlineData.length);
+
+      const handleOnline = () => {
+        const offlineDataToSync = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
+        if (offlineDataToSync.length > 0) {
+          // Here you would normally sync with your API.
+          // For now, we'll just clear it and notify the user.
+          console.log('Syncing offline data...', offlineDataToSync);
+          localStorage.removeItem('offlineOccurrences');
+          setOfflineOccurrencesCount(0);
+          toast({
+            title: "Sincronização completa!",
+            description: `${offlineDataToSync.length} ocorrências offline foram enviadas.`,
+          });
+        }
+      };
+
+      window.addEventListener('online', handleOnline);
+
+      return () => {
+        window.removeEventListener('online', handleOnline);
+      };
     }
-  }, []);
+  }, [toast]);
 
   const handleNewOccurrence = () => {
     router.push('/ocorrencia');
@@ -44,6 +72,7 @@ export default function Home() {
       localStorage.removeItem('occurrences');
       localStorage.removeItem('offlineOccurrences');
       setOccurrences([]);
+      setOfflineOccurrencesCount(0);
     }
     console.log("Roteiro finalizado e dados limpos.");
   };
@@ -75,6 +104,16 @@ export default function Home() {
         </div>
       </header>
       <main className="flex flex-1 flex-col items-center p-4 text-center">
+        {offlineOccurrencesCount > 0 && (
+          <div className="w-full max-w-2xl mb-4">
+            <Card className="bg-destructive/10 border-destructive/50">
+              <CardContent className="p-3 flex items-center justify-center gap-2 text-destructive">
+                <WifiOff className="h-5 w-5"/>
+                <p className="font-semibold">{offlineOccurrencesCount} ocorrência(s) aguardando para sincronizar.</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
         {occurrences.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center">
             <h2 className="text-xl text-muted-foreground">

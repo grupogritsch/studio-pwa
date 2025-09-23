@@ -131,13 +131,15 @@ export function ScanForm() {
   useEffect(() => {
     const startScanner = async () => {
       try {
+        // Ensure library is loaded before using its classes
+        const { BrowserQRCodeReader, NotFoundException } = await import('@zxing/browser');
+        
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
         setHasCameraPermission(true);
 
-        const { BrowserQRCodeReader, NotFoundException } = await import('@zxing/browser');
         const codeReader = new BrowserQRCodeReader();
 
         if (videoRef.current) {
@@ -148,6 +150,7 @@ export function ScanForm() {
               setScannedCode(result.getText());
               setStep('form');
             }
+            // Check for NotFoundException safely
             if (error && !(error instanceof NotFoundException)) {
               console.error("Scanner Error:", error);
               toast({
@@ -177,7 +180,7 @@ export function ScanForm() {
       scannerControlsRef.current?.stop();
       scannerControlsRef.current = null;
     };
-  }, [step, toast]);
+  }, [step, toast, hasCameraPermission]);
 
 
   
@@ -197,6 +200,12 @@ export function ScanForm() {
   const saveToLocal = async (values: z.infer<typeof formSchema>) => {
     if (typeof window.localStorage === 'undefined' || !scannedCode) return;
     
+    const occurrenceData = { 
+        ...values, 
+        scannedCode, 
+        timestamp: new Date().toISOString() 
+    };
+
     // Save for offline sync
     if(isOffline){
         const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
@@ -208,17 +217,17 @@ export function ScanForm() {
                 reader.readAsDataURL(values.photo as File);
             });
         }
-        offlineData.push({ ...values, scannedCode, photo: photoDataUrl, timestamp: new Date().toISOString() });
+        offlineData.push({ ...occurrenceData, photo: photoDataUrl });
         localStorage.setItem('offlineOccurrences', JSON.stringify(offlineData));
     }
 
     // Save for local display
     const localOccurrences = JSON.parse(localStorage.getItem('occurrences') || '[]');
-    localOccurrences.push({ ...values, scannedCode, timestamp: new Date().toISOString() });
+    localOccurrences.push(occurrenceData);
     localStorage.setItem('occurrences', JSON.stringify(localOccurrences));
     
     toast({
-      title: isOffline ? "Salvo para envio posterior" : "Ocorrência registrada localmente!",
+      title: isOffline ? "Salvo para envio posterior" : "Ocorrência registrada!",
       description: isOffline ? "A ocorrência será enviada quando houver conexão." : "Visível na tela inicial.",
     });
 
