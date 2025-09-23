@@ -82,6 +82,7 @@ export function ScanForm() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const router = useRouter();
+  const scannerControlsRef = useRef<IScannerControls | null>(null);
 
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -123,21 +124,24 @@ export function ScanForm() {
       });
     };
   
-    const syncOfflineData = () => {
+    const syncOfflineData = async () => {
       if (typeof window.localStorage === 'undefined') return;
       const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
       if (offlineData.length > 0 && navigator.onLine) {
         startTransition(async () => {
           let allSucceeded = true;
+          const remainingData = [];
           for (const data of offlineData) {
             try {
               const photoFile = await dataURItoFile(data.photo, 'offline_photo.jpeg');
               const result = await submitOccurrence({ ...data, photo: photoFile });
               if (!result.success) {
                 allSucceeded = false;
+                remainingData.push(data);
               }
             } catch (error) {
               allSucceeded = false;
+              remainingData.push(data);
               console.error("Erro ao sincronizar:", error);
             }
           }
@@ -149,6 +153,7 @@ export function ScanForm() {
               description: `${offlineData.length} ocorrência(s) pendente(s) foi/foram enviada(s).`,
             });
           } else {
+            localStorage.setItem('offlineOccurrences', JSON.stringify(remainingData));
             toast({
               variant: "destructive",
               title: "Falha na Sincronização",
@@ -174,7 +179,6 @@ export function ScanForm() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
   
   // Effect 1: Request camera permission
@@ -201,8 +205,6 @@ export function ScanForm() {
       return;
     }
 
-    let controls: IScannerControls | undefined;
-
     const startScanner = async () => {
         try {
             const zxing = await import('@zxing/browser');
@@ -211,14 +213,17 @@ export function ScanForm() {
 
             if (!videoRef.current) return;
 
-            controls = codeReader.decodeFromVideoElement(videoRef.current, (result, error, ctrls) => {
+            scannerControlsRef.current = await codeReader.decodeFromVideoElement(videoRef.current, (result, error, ctrls) => {
                 if (result) {
                     ctrls.stop();
+                    scannerControlsRef.current = null;
                     form.setValue('scannedCode', result.getText());
                     setStep('form');
                 }
-                if (error && error.name !== 'NotFoundException') {
-                    console.error('ZXing error:', error);
+                if (error) {
+                    if (error.name !== 'NotFoundException') {
+                      console.error('ZXing error:', error);
+                    }
                 }
             });
         } catch (err: any) {
@@ -236,7 +241,10 @@ export function ScanForm() {
     startScanner();
 
     return () => {
-        controls?.stop();
+        if (scannerControlsRef.current) {
+          scannerControlsRef.current.stop();
+          scannerControlsRef.current = null;
+        }
     };
   }, [step, hasCameraPermission, toast, form]);
 
@@ -256,6 +264,7 @@ export function ScanForm() {
   };
 
   const saveForOffline = async (values: z.infer<typeof formSchema>) => {
+    if (typeof window.localStorage === 'undefined') return;
     const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
     
     let photoDataUrl = values.photo;
@@ -274,6 +283,8 @@ export function ScanForm() {
       title: "Salvo para envio posterior",
       description: "A ocorrência foi salva e será enviada quando houver conexão.",
     });
+    form.reset();
+    setImagePreview(null);
     router.push('/');
   };
 
@@ -309,6 +320,8 @@ export function ScanForm() {
             title: "Sucesso!",
             description: result.message,
           });
+          form.reset();
+          setImagePreview(null);
           router.push('/');
         } else {
           throw new Error(result.message || "Ocorreu um erro desconhecido.");
@@ -319,11 +332,23 @@ export function ScanForm() {
           title: "Erro ao registrar ocorrência",
           description: error.message || "Não foi possível obter a localização ou enviar os dados.",
         });
-        if(isOffline) {
-          await saveForOffline(values);
-        }
+        // Don't save offline if geolocation fails, as lat/lng are required
+        // await saveForOffline(values);
       }
     });
+  };
+
+  const handleGoBack = () => {
+    if (scannerControlsRef.current) {
+        scannerControlsRef.current.stop();
+        scannerControlsRef.current = null;
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    router.push('/');
   };
 
   if (step === 'scan') {
@@ -356,14 +381,7 @@ export function ScanForm() {
         <Button 
             variant="secondary"
             className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10"
-            onClick={() => {
-              if (videoRef.current && videoRef.current.srcObject) {
-                const stream = videoRef.current.srcObject as MediaStream;
-                stream.getTracks().forEach(track => track.stop());
-                videoRef.current.srcObject = null;
-              }
-              router.push('/');
-            }}
+            onClick={handleGoBack}
         >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Voltar
