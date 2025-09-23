@@ -94,6 +94,12 @@ export function ScanForm() {
     },
   });
 
+  const dataURItoFile = async (dataURI: string, fileName: string): Promise<File> => {
+    const res = await fetch(dataURI);
+    const blob = await res.blob();
+    return new File([blob], fileName, { type: blob.type });
+  };
+  
   // Effect 1: Request camera permission
   useEffect(() => {
     if (step !== 'scan') {
@@ -124,7 +130,7 @@ export function ScanForm() {
     const startScanner = async () => {
         try {
             const zxing = await import('@zxing/browser');
-            const { BrowserQRCodeReader, NotFoundException } = zxing;
+            const { BrowserQRCodeReader } = zxing;
             const codeReader = new BrowserQRCodeReader();
 
             if (!videoRef.current || !isMounted) return;
@@ -143,7 +149,7 @@ export function ScanForm() {
                         description: "Continue para preencher a ocorrência.",
                     });
                 }
-                if (error && !(error instanceof NotFoundException)) {
+                 if (error && error.name !== 'NotFoundException') {
                     console.error('ZXing error:', error);
                 }
             });
@@ -166,8 +172,43 @@ export function ScanForm() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, hasCameraPermission]);
 
-
+  // Effect 3: Handle Offline/Online status and sync
   useEffect(() => {
+      const syncOfflineData = () => {
+        const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
+        if (offlineData.length > 0 && navigator.onLine) {
+          startTransition(async () => {
+            let allSucceeded = true;
+            for (const data of offlineData) {
+              try {
+                const photoFile = await dataURItoFile(data.photo, 'offline_photo.jpeg');
+                const result = await submitOccurrence({ ...data, photo: photoFile });
+                if (!result.success) {
+                  allSucceeded = false;
+                }
+              } catch (error) {
+                allSucceeded = false;
+                console.error("Erro ao sincronizar:", error);
+              }
+            }
+            
+            if (allSucceeded) {
+              localStorage.removeItem('offlineOccurrences');
+              toast({
+                title: "Sincronização Completa!",
+                description: `${offlineData.length} ocorrência(s) pendente(s) foi/foram enviada(s).`,
+              });
+            } else {
+                toast({
+                    variant: "destructive",
+                    title: "Falha na Sincronização",
+                    description: "Alguns dados não puderam ser enviados. Tente novamente mais tarde.",
+                });
+            }
+          });
+        }
+      };
+
     const handleOnline = () => {
       setIsOffline(false);
       toast({
@@ -188,59 +229,18 @@ export function ScanForm() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    if (typeof window !== 'undefined' && 'onLine' in navigator) {
-      setIsOffline(!navigator.onLine);
-    }
-
+    // Initial state
+    setIsOffline(!navigator.onLine);
+    
+    // Initial sync check
     syncOfflineData();
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const syncOfflineData = () => {
-    const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
-    if (offlineData.length > 0 && !isOffline) {
-      startTransition(async () => {
-        let allSucceeded = true;
-        for (const data of offlineData) {
-          try {
-            const photoFile = await dataURItoFile(data.photo, 'offline_photo.jpeg');
-            const result = await submitOccurrence({ ...data, photo: photoFile });
-            if (!result.success) {
-              allSucceeded = false;
-            }
-          } catch (error) {
-            allSucceeded = false;
-            console.error("Erro ao sincronizar:", error);
-          }
-        }
-        
-        if (allSucceeded) {
-          localStorage.removeItem('offlineOccurrences');
-           toast({
-            title: "Sincronização Completa!",
-            description: `${offlineData.length} ocorrência(s) pendente(s) foi/foram enviada(s).`,
-          });
-        } else {
-            toast({
-                variant: "destructive",
-                title: "Falha na Sincronização",
-                description: "Alguns dados não puderam ser enviados. Tente novamente mais tarde.",
-            });
-        }
-      });
-    }
-  };
-
-  const dataURItoFile = async (dataURI: string, fileName: string): Promise<File> => {
-    const res = await fetch(dataURI);
-    const blob = await res.blob();
-    return new File([blob], fileName, { type: blob.type });
-  }
 
   const occurrenceValue = form.watch('occurrence');
   
