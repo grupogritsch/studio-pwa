@@ -38,7 +38,6 @@ import { submitOccurrence } from '@/lib/actions';
 import { Camera, FileText, Loader2, Package, ScanLine, Send, User, WifiOff, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { IScannerControls } from '@zxing/browser';
-import { NotFoundException } from '@zxing/browser';
 
 
 const formSchema = z.object({
@@ -105,6 +104,7 @@ export function ScanForm() {
     const startScanner = async () => {
         try {
             const zxing = await import('@zxing/browser');
+            const { NotFoundException } = zxing;
             const codeReader = new zxing.BrowserQRCodeReader();
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
             
@@ -124,11 +124,7 @@ export function ScanForm() {
                     }
                     if (error && !(error instanceof NotFoundException)) {
                         console.error('ZXing error:', error);
-                        toast({
-                            variant: "destructive",
-                            title: "Erro no Scanner",
-                            description: "Não foi possível ler o código. Tente novamente.",
-                        });
+                        // Não pare o scanner em erros que não sejam de código não encontrado
                     }
                 });
             }
