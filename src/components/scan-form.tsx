@@ -159,9 +159,11 @@ export function ScanForm() {
     window.addEventListener('offline', handleOffline);
 
     // Initial state
-    setIsOffline(!navigator.onLine);
-    if (navigator.onLine) {
-      syncOfflineData();
+    if (typeof navigator !== 'undefined') {
+        setIsOffline(!navigator.onLine);
+        if (navigator.onLine) {
+            syncOfflineData();
+        }
     }
     
     return () => {
@@ -200,17 +202,8 @@ export function ScanForm() {
     const startScanner = async () => {
         try {
             const zxing = await import('@zxing/browser');
-            const { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } = zxing;
-            const hints = new Map();
-            const formats = [
-                BarcodeFormat.QR_CODE, 
-                BarcodeFormat.CODE_128, 
-                BarcodeFormat.EAN_13,
-                BarcodeFormat.ITF,
-            ];
-            hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-            
-            const codeReader = new BrowserMultiFormatReader(hints);
+            const { BrowserQRCodeReader } = zxing;
+            const codeReader = new BrowserQRCodeReader();
 
             if (!videoRef.current) return;
 
@@ -228,8 +221,13 @@ export function ScanForm() {
                     console.error('ZXing error:', error);
                 }
             });
-        } catch (err) {
-            console.error("Failed to start scanner:", err);
+        } catch (err: any) {
+             console.error("Failed to start scanner:", err);
+             toast({
+                variant: 'destructive',
+                title: 'Erro no Scanner',
+                description: `Não foi possível iniciar o scanner: ${err.message}`,
+             })
         }
     };
 
@@ -238,7 +236,7 @@ export function ScanForm() {
     return () => {
         controls?.stop();
     };
-  }, [step, hasCameraPermission, form, toast]);
+  }, [step, hasCameraPermission, toast, form]);
 
   const occurrenceValue = form.watch('occurrence');
   
