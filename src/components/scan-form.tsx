@@ -133,7 +133,7 @@ export function ScanForm() {
           }
 
           codeReader = new Zxing.BrowserQRCodeReader();
-          codeReader.decodeFromStream(stream, videoRef.current, (result, err) => {
+          const controls = await codeReader.decodeFromStream(stream, videoRef.current, (result, err) => {
             if (result) {
               form.setValue('scannedCode', result.getText());
               setScannerOpen(false);
@@ -144,14 +144,12 @@ export function ScanForm() {
             }
             if (err && !(err instanceof Zxing.NotFoundException)) {
               console.error(err);
-            }
-          }).catch((err: any) => {
-              console.error("Decode error", err);
-              toast({
+               toast({
                 variant: "destructive",
                 title: "Erro no Scanner",
-                description: "Não foi possível iniciar o leitor de código.",
+                description: "Não foi possível ler o código.",
               });
+            }
           });
         } catch (error) {
           console.error('Error accessing camera:', error);
@@ -500,6 +498,10 @@ export function ScanForm() {
 
       <Dialog open={isScannerOpen} onOpenChange={setScannerOpen}>
         <DialogContent className="max-w-full w-full h-full max-h-screen p-0 m-0">
+          <DialogHeader>
+            <DialogTitle className="sr-only">Scanner de Código</DialogTitle>
+            <DialogDescription className="sr-only">Aponte a câmera para o código de barras ou QR code.</DialogDescription>
+          </DialogHeader>
           <div className="relative w-full h-full">
              <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline />
              {hasCameraPermission === false && (
