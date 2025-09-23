@@ -107,60 +107,68 @@ export function ScanForm() {
   }, []);
 
   const openScanner = async () => {
-    setIsRequestingPermission(true);
-    try {
-      // Check for camera permission
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      // Stop the tracks immediately to free up camera, zxing will ask for it again
-      stream.getTracks().forEach(track => track.stop());
-      setHasCameraPermission(true);
-      setScannerOpen(true);
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      setHasCameraPermission(false);
-      setScannerOpen(true); // Open dialog to show the error
-      toast({
-        variant: 'destructive',
-        title: 'Acesso à Câmera Negado',
-        description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
-      });
-    } finally {
-      setIsRequestingPermission(false);
-    }
+    setScannerOpen(true);
   };
-  
+
   useEffect(() => {
     let codeReader: any;
-    if (isScannerOpen && hasCameraPermission && Zxing && videoRef.current) {
-      codeReader = new Zxing.BrowserQRCodeReader();
-      codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, err) => {
-        if (result) {
-          form.setValue('scannedCode', result.getText());
-          setScannerOpen(false);
+    let stream: MediaStream;
+
+    const startScanner = async () => {
+      if (isScannerOpen && Zxing && videoRef.current) {
+        try {
+          // Request permission and get stream
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          setHasCameraPermission(true);
+
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+
+          codeReader = new Zxing.BrowserQRCodeReader();
+          codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, err) => {
+            if (result) {
+              form.setValue('scannedCode', result.getText());
+              setScannerOpen(false);
+              toast({
+                title: "Código lido!",
+                description: "O código foi preenchido.",
+              });
+            }
+            if (err && !(err instanceof Zxing.NotFoundException)) {
+              console.error(err);
+            }
+          }).catch((err: any) => {
+              console.error("Decode error", err);
+              toast({
+                variant: "destructive",
+                title: "Erro no Scanner",
+                description: "Não foi possível iniciar o leitor de código.",
+              });
+          });
+        } catch (error) {
+          console.error('Error accessing camera:', error);
+          setHasCameraPermission(false);
           toast({
-            title: "Código lido!",
-            description: "O código foi preenchido.",
+            variant: 'destructive',
+            title: 'Acesso à Câmera Negado',
+            description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
           });
         }
-        if (err && !(err instanceof Zxing.NotFoundException)) {
-          console.error(err);
-          // Don't toast on every frame decode error
-        }
-      }).catch((err: any) => {
-          console.error("Decode error", err);
-           toast({
-            variant: "destructive",
-            title: "Erro no Scanner",
-            description: "Não foi possível iniciar o leitor de código.",
-          });
-      });
-    }
+      }
+    };
+
+    startScanner();
+
     return () => {
       if (codeReader) {
         codeReader.reset();
       }
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
     };
-  }, [isScannerOpen, hasCameraPermission, Zxing, form, toast]);
+  }, [isScannerOpen, Zxing, form, toast]);
 
 
   useEffect(() => {
@@ -490,7 +498,7 @@ export function ScanForm() {
             </DialogDescription>
           </DialogHeader>
           <div className="relative">
-             <video ref={videoRef} className="w-full aspect-video rounded-md bg-black" />
+             <video ref={videoRef} className="w-full aspect-video rounded-md bg-black" autoPlay playsInline />
              {hasCameraPermission === false && (
                <div className="absolute inset-0 flex items-center justify-center bg-black/80 rounded-md">
                 <Alert variant="destructive" className="max-w-sm">
