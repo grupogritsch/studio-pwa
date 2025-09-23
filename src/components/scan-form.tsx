@@ -196,7 +196,6 @@ export function ScanForm() {
     }
 
     let controls: IScannerControls | undefined;
-    let isMounted = true;
 
     const startScanner = async () => {
         try {
@@ -213,13 +212,9 @@ export function ScanForm() {
             
             const codeReader = new BrowserMultiFormatReader(hints);
 
-            if (!videoRef.current || !isMounted) return;
+            if (!videoRef.current) return;
 
-            controls = codeReader.decodeFromVideoElement(videoRef.current, (result, error, ctrls) => {
-                if (!isMounted) {
-                    ctrls.stop();
-                    return;
-                }
+            controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error, ctrls) => {
                 if (result) {
                     ctrls.stop();
                     form.setValue('scannedCode', result.getText());
@@ -241,15 +236,9 @@ export function ScanForm() {
     startScanner();
 
     return () => {
-        isMounted = false;
         controls?.stop();
-        if (videoRef.current && videoRef.current.srcObject) {
-            const stream = videoRef.current.srcObject as MediaStream;
-            stream.getTracks().forEach(track => track.stop());
-            videoRef.current.srcObject = null;
-        }
     };
-  }, [step, hasCameraPermission]);
+  }, [step, hasCameraPermission, form, toast]);
 
   const occurrenceValue = form.watch('occurrence');
   
@@ -535,3 +524,5 @@ export function ScanForm() {
     </Card>
   );
 }
+
+    
