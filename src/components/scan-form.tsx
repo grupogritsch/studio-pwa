@@ -181,72 +181,62 @@ export function ScanForm() {
     };
   }, [toast]);
   
-  // Effect 1: Request camera permission
   useEffect(() => {
-    if (step !== 'scan') {
-        return;
-    }
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-      .then(stream => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-        setHasCameraPermission(true);
-      })
-      .catch(err => {
-        console.error("Failed to get camera permission:", err);
-        setHasCameraPermission(false);
-      });
-  }, [step]);
-  
-  // Effect 2: Start/Stop scanner based on permission
-  useEffect(() => {
-    if (step !== 'scan' || hasCameraPermission !== true || !videoRef.current) {
-      return;
-    }
+    let controls: IScannerControls | null = null;
+    if (step === 'scan') {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(stream => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+          setHasCameraPermission(true);
 
-    const startScanner = async () => {
-        try {
-            const zxing = await import('@zxing/browser');
-            const { BrowserQRCodeReader } = zxing;
-            const codeReader = new BrowserQRCodeReader();
-
-            if (!videoRef.current) return;
-
-            scannerControlsRef.current = await codeReader.decodeFromVideoElement(videoRef.current, (result, error, ctrls) => {
-                if (result) {
+          const startScanner = async () => {
+            if (videoRef.current) {
+              try {
+                const zxing = await import('@zxing/browser');
+                const { BrowserQRCodeReader } = zxing;
+                const codeReader = new BrowserQRCodeReader();
+                
+                controls = await codeReader.decodeFromVideoElement(videoRef.current, (result, error, ctrls) => {
+                  if (result) {
                     ctrls.stop();
-                    scannerControlsRef.current = null;
                     form.setValue('scannedCode', result.getText());
                     setStep('form');
-                }
-                if (error) {
-                    if (error.name !== 'NotFoundException') {
-                      console.error('ZXing error:', error);
-                    }
-                }
-            });
-        } catch (err: any) {
-             console.error("Failed to start scanner:", err);
-             if (err && err.name !== 'NotFoundException') {
-                toast({
-                    variant: 'destructive',
-                    title: 'Erro no Scanner',
-                    description: `Não foi possível iniciar o scanner: ${err.message}`,
+                  }
+                  if (error && !(error instanceof zxing.NotFoundException)) {
+                     toast({
+                        variant: "destructive",
+                        title: "Erro de Scanner",
+                        description: `Ocorreu um erro: ${error.message}`,
+                    });
+                  }
                 });
-             }
-        }
-    };
-
-    startScanner();
-
+              } catch (err) {
+                 toast({
+                    variant: "destructive",
+                    title: "Erro de Scanner",
+                    description: `Não foi possível iniciar o leitor.`,
+                });
+              }
+            }
+          }
+          startScanner();
+        })
+        .catch(err => {
+          console.error("Failed to get camera permission:", err);
+          setHasCameraPermission(false);
+          toast({
+            variant: "destructive",
+            title: "Câmera não autorizada",
+            description: "Você precisa permitir o acesso à câmera para continuar.",
+          });
+        });
+    }
     return () => {
-        if (scannerControlsRef.current) {
-          scannerControlsRef.current.stop();
-          scannerControlsRef.current = null;
-        }
+      controls?.stop();
     };
-  }, [step, hasCameraPermission, toast, form]);
+  }, [step, toast, form]);
 
   const occurrenceValue = form.watch('occurrence');
   
@@ -486,7 +476,7 @@ export function ScanForm() {
             <FormField
               control={form.control}
               name="photo"
-              render={() => (
+              render={({ field }) => (
                 <FormItem>
                   <FormLabel>Foto da Ocorrência</FormLabel>
                   <FormControl>
