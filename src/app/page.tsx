@@ -4,6 +4,17 @@
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Plus, Check } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 export default function Home() {
   const router = useRouter();
@@ -14,7 +25,7 @@ export default function Home() {
 
   const handleFinish = () => {
     // Lógica para finalizar será adicionada aqui
-    console.log("Botão Finalizar clicado");
+    console.log("Roteiro finalizado");
   };
 
   return (
@@ -45,15 +56,30 @@ export default function Home() {
         >
           <Plus className="h-10 w-10" />
         </Button>
-        <Button
-          variant="default"
-          size="icon"
-          className="h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90"
-          onClick={handleFinish}
-          aria-label="Finalizar"
-        >
-          <Check className="h-10 w-10" />
-        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="default"
+              size="icon"
+              className="h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90"
+              aria-label="Finalizar"
+            >
+              <Check className="h-10 w-10" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Finalizar Roteiro</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que quer finalizar o roteiro? Esta ação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleFinish}>Confirmar</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </footer>
     </div>
   );
