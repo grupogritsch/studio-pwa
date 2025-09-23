@@ -3,7 +3,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Plus, Check, Package, Clock, WifiOff } from 'lucide-react';
+import { Plus, Check, Package, Clock, WifiOff, Download } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,11 +30,36 @@ type Occurrence = {
   receiverDocument?: string;
 };
 
+// Define a interface para o evento de instalação
+interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: Array<string>;
+  readonly userChoice: Promise<{
+    outcome: 'accepted' | 'dismissed';
+    platform: string;
+  }>;
+  prompt(): Promise<void>;
+}
+
+
 export default function Home() {
   const router = useRouter();
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
   const [offlineOccurrencesCount, setOfflineOccurrencesCount] = useState(0);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const { toast } = useToast();
+  
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
 
   useEffect(() => {
     async function loadData() {
@@ -91,6 +116,20 @@ export default function Home() {
       });
     }
   };
+
+  const handleInstallClick = async () => {
+    if (!installPrompt) return;
+
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      toast({
+        title: 'App instalado!',
+        description: 'O ScanTracker foi adicionado à sua tela inicial.',
+      });
+    }
+    setInstallPrompt(null);
+  };
   
   const getOccurrenceLabel = (value: string) => {
     switch (value) {
@@ -107,16 +146,21 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-secondary">
-      <header className="sticky top-0 z-10 flex h-20 items-center justify-center gap-4 border-b bg-primary px-4 shadow-sm md:px-6">
+      <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 border-b bg-primary px-4 shadow-sm md:px-6">
         <div style={{
           fontSize: '32px',
           fontWeight: 'bold',
           fontFamily: 'Roboto Bold',
           letterSpacing: '1px',
-          textAlign: 'center'
         }}>
           <span style={{color:'#ffffff'}}>SCAN</span><span style={{ color: '#FFA500' }}>TRACKER</span>
         </div>
+        {installPrompt && (
+          <Button variant="outline" size="sm" onClick={handleInstallClick} className="bg-accent text-accent-foreground hover:bg-accent/90">
+            <Download className="mr-2 h-4 w-4" />
+            Instalar App
+          </Button>
+        )}
       </header>
       <main className="flex flex-1 flex-col items-center p-4 text-center">
         {offlineOccurrencesCount > 0 && (
