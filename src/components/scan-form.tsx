@@ -38,6 +38,7 @@ import { Camera, FileText, Loader2, Package, Send, User, WifiOff, ArrowLeft } fr
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { BrowserQRCodeReader, IScannerControls } from '@zxing/browser';
 import { NotFoundException } from '@zxing/library';
+import { db, dataURLtoBlob } from '@/lib/db';
 
 
 const formSchema = z.object({
@@ -213,43 +214,46 @@ export function ScanForm() {
     }
   };
 
-  const saveToLocal = async (values: z.infer<typeof formSchema>) => {
-    if (typeof window.localStorage === 'undefined' || !scannedCode) return;
+  const saveOccurrence = async (values: z.infer<typeof formSchema>) => {
+    if (typeof window === 'undefined' || !scannedCode) return;
     
     const timestamp = new Date().toISOString();
 
-    if(isOffline){
-        const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
-        const offlineOccurrence = { 
-            ...values, 
-            scannedCode, 
-            timestamp,
-            photo: imagePreview // Save full base64 for offline sync
-        };
-        offlineData.push(offlineOccurrence);
-        localStorage.setItem('offlineOccurrences', JSON.stringify(offlineData));
-    }
-
-    const displayOccurrence = {
+    const occurrenceData = {
+        scannedCode,
         occurrence: values.occurrence,
         receiverName: values.receiverName,
         receiverDocument: values.receiverDocument,
-        scannedCode,
         timestamp
     };
 
-    const localOccurrences = JSON.parse(localStorage.getItem('occurrences') || '[]');
-    localOccurrences.push(displayOccurrence);
-    localStorage.setItem('occurrences', JSON.stringify(localOccurrences));
-    
-    toast({
-      title: isOffline ? "Salvo para envio posterior" : "Ocorrência registrada!",
-      description: isOffline ? "A ocorrência será enviada quando houver conexão." : "Visível na tela inicial.",
-    });
+    try {
+        if (isOffline) {
+            let photoBlob: Blob | undefined;
+            if (imagePreview) {
+                photoBlob = await dataURLtoBlob(imagePreview);
+            }
+            await db.addOfflineOccurrence({ ...occurrenceData, photo: photoBlob });
+        }
 
-    form.reset();
-    setImagePreview(null);
-    router.push('/');
+        await db.addOccurrence(occurrenceData);
+        
+        toast({
+          title: isOffline ? "Salvo para envio posterior" : "Ocorrência registrada!",
+          description: isOffline ? "A ocorrência será enviada quando houver conexão." : "Visível na tela inicial.",
+        });
+
+        form.reset();
+        setImagePreview(null);
+        router.push('/');
+    } catch(error) {
+        console.error("Failed to save occurrence to DB:", error);
+        toast({
+            variant: "destructive",
+            title: "Erro ao salvar",
+            description: "Não foi possível registrar a ocorrência no banco de dados local.",
+        });
+    }
   };
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
@@ -259,7 +263,7 @@ export function ScanForm() {
          return;
       }
 
-      await saveToLocal(values);
+      await saveOccurrence(values);
     });
   };
 
@@ -460,5 +464,3 @@ export function ScanForm() {
     </>
     );
 }
-
-    

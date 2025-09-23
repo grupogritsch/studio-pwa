@@ -18,12 +18,16 @@ import {
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { db } from '@/lib/db';
 
 
 type Occurrence = {
+  id: number;
   scannedCode: string;
   occurrence: string;
   timestamp: string;
+  receiverName?: string;
+  receiverDocument?: string;
 };
 
 export default function Home() {
@@ -33,48 +37,57 @@ export default function Home() {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedOccurrences = JSON.parse(localStorage.getItem('occurrences') || '[]');
-      setOccurrences(savedOccurrences);
+    async function loadData() {
+      if (typeof window !== 'undefined') {
+        const savedOccurrences = await db.getAllOccurrences();
+        setOccurrences(savedOccurrences.reverse());
 
-      const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
-      setOfflineOccurrencesCount(offlineData.length);
-
-      const handleOnline = () => {
-        const offlineDataToSync = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
-        if (offlineDataToSync.length > 0) {
-          // Here you would normally sync with your API.
-          // For now, we'll just clear it and notify the user.
-          console.log('Syncing offline data...', offlineDataToSync);
-          localStorage.removeItem('offlineOccurrences');
-          setOfflineOccurrencesCount(0);
-          toast({
-            title: "Sincronização completa!",
-            description: `${offlineDataToSync.length} ocorrências offline foram enviadas.`,
-          });
-        }
-      };
-
-      window.addEventListener('online', handleOnline);
-
-      return () => {
-        window.removeEventListener('online', handleOnline);
-      };
+        const offlineCount = await db.countOfflineOccurrences();
+        setOfflineOccurrencesCount(offlineCount);
+      }
     }
+    loadData();
+
+    const handleOnline = async () => {
+      const offlineDataToSync = await db.getOfflineOccurrences();
+      if (offlineDataToSync.length > 0) {
+        // Here you would normally sync with your API.
+        // For now, we'll just clear it and notify the user.
+        console.log('Syncing offline data...', offlineDataToSync);
+        
+        // Simulate API call
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        await db.clearOfflineData();
+        setOfflineOccurrencesCount(0);
+        toast({
+          title: "Sincronização completa!",
+          description: `${offlineDataToSync.length} ocorrências offline foram enviadas.`,
+        });
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
   }, [toast]);
 
   const handleNewOccurrence = () => {
     router.push('/ocorrencia');
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('occurrences');
-      localStorage.removeItem('offlineOccurrences');
+      await db.clearAllData();
       setOccurrences([]);
       setOfflineOccurrencesCount(0);
+      toast({
+        title: "Roteiro finalizado",
+        description: "Todos os dados foram limpos do dispositivo."
+      });
     }
-    console.log("Roteiro finalizado e dados limpos.");
   };
   
   const getOccurrenceLabel = (value: string) => {

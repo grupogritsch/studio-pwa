@@ -11,9 +11,9 @@ export async function submitOccurrence(data: OccurrenceFormData & { scannedCode:
   await new Promise(resolve => setTimeout(resolve, 1000));
 
   // In a real app, you would handle file upload and database saving.
-  // For now, we handle saving to localStorage on the client side.
+  // We've moved storage to IndexedDB on the client side.
 
-  console.log('Data processed for client-side storage.');
+  console.log('Data processed for client-side storage via IndexedDB.');
 
   revalidatePath('/');
   return { success: true, message: 'Ocorrência registrada com sucesso!' };
