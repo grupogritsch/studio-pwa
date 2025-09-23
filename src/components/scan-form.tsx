@@ -105,14 +105,14 @@ export function ScanForm() {
     const startScanner = async () => {
       setIsScannerBusy(true);
       try {
-        const zxing = await import('@zxing/browser');
-        codeReader = new zxing.BrowserQRCodeReader();
-        
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         setHasCameraPermission(true);
-
+        
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          const zxing = await import('@zxing/browser');
+          codeReader = new zxing.BrowserQRCodeReader();
+
           controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error) => {
             if (result) {
               form.setValue('scannedCode', result.getText());
@@ -133,9 +133,8 @@ export function ScanForm() {
         toast({
           variant: 'destructive',
           title: 'Acesso à Câmera Negado',
-          description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
+          description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador para usar esta função.',
         });
-        setStep('form'); 
       } finally {
         setIsScannerBusy(false);
       }
@@ -321,12 +320,26 @@ export function ScanForm() {
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-3/4 h-1/3 border-4 border-dashed border-white/50 rounded-lg" />
         </div>
-        {isScannerBusy && (
+        
+        {(isScannerBusy || hasCameraPermission === null) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
                 <Loader2 className="h-10 w-10 animate-spin text-white mb-4" />
                 <p className="text-white">Iniciando câmera...</p>
             </div>
         )}
+
+        {hasCameraPermission === false && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 p-4">
+             <Alert variant="destructive" className="max-w-sm">
+                <AlertTitle>Acesso à Câmera Necessário</AlertTitle>
+                <AlertDescription>
+                  Você precisa permitir o acesso à câmera para escanear o código. 
+                  Por favor, habilite a permissão nas configurações do seu navegador e atualize a página.
+                </AlertDescription>
+              </Alert>
+          </div>
+        )}
+        
         <Button 
             variant="secondary"
             className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10"
