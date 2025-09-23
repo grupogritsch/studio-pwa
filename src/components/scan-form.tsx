@@ -37,7 +37,8 @@ import { useToast } from '@/hooks/use-toast';
 import { submitOccurrence } from '@/lib/actions';
 import { Camera, FileText, Loader2, Package, ScanLine, Send, User, WifiOff, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { BrowserQRCodeReader, IScannerControls, NotFoundException } from '@zxing/browser';
+import { BrowserQRCodeReader, IScannerControls } from '@zxing/browser';
+import { NotFoundException } from '@zxing/library';
 
 
 const formSchema = z.object({
@@ -128,8 +129,8 @@ export function ScanForm() {
   }, []);
   
   
-// Get camera permission
-useEffect(() => {
+  // Get camera permission
+  useEffect(() => {
     if (step !== 'scan') {
       return;
     }
@@ -158,6 +159,10 @@ useEffect(() => {
 
     // Cleanup: stop video tracks when component unmounts or step changes
     return () => {
+      if (scannerControlsRef.current) {
+        scannerControlsRef.current.stop();
+        scannerControlsRef.current = null;
+      }
       if (videoRef.current && videoRef.current.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach(track => track.stop());
@@ -201,13 +206,6 @@ useEffect(() => {
     
     startScanner();
 
-    // Cleanup: stop scanner when component unmounts
-    return () => {
-      if (scannerControlsRef.current) {
-        scannerControlsRef.current.stop();
-        scannerControlsRef.current = null;
-      }
-    };
   }, [step, hasCameraPermission, toast]);
 
   
