@@ -38,6 +38,8 @@ import { submitOccurrence } from '@/lib/actions';
 import { Camera, FileText, Loader2, Package, ScanLine, Send, User, WifiOff, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { IScannerControls } from '@zxing/browser';
+import { NotFoundException } from '@zxing/browser';
+
 
 const formSchema = z.object({
   scannedCode: z.string({ required_error: "Código é obrigatório." }).min(1, "Código é obrigatório."),
@@ -95,55 +97,56 @@ export function ScanForm() {
   
   useEffect(() => {
     if (step !== 'scan') {
-      return;
+        return;
     }
 
     let controls: IScannerControls | undefined;
-    let stream: MediaStream | undefined;
 
     const startScanner = async () => {
-      try {
-        // Solicita o acesso à câmera
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        setHasCameraPermission(true);
-        
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          const zxing = await import('@zxing/browser');
-          const codeReader = new zxing.BrowserQRCodeReader();
+        try {
+            const zxing = await import('@zxing/browser');
+            const codeReader = new zxing.BrowserQRCodeReader();
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            
+            setHasCameraPermission(true);
 
-          // Inicia a decodificação
-          controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error, ctrls) => {
-            if (result) {
-              // Garante que o scanner pare antes de mudar de etapa
-              ctrls.stop();
-              form.setValue('scannedCode', result.getText());
-              setStep('form');
-              toast({
-                title: "Código lido!",
-                description: "Continue para preencher a ocorrência.",
-              });
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error, ctrls) => {
+                    if (result) {
+                        ctrls.stop();
+                        form.setValue('scannedCode', result.getText());
+                        setStep('form');
+                        toast({
+                            title: "Código lido!",
+                            description: "Continue para preencher a ocorrência.",
+                        });
+                    }
+                    if (error && !(error instanceof NotFoundException)) {
+                        console.error('ZXing error:', error);
+                        toast({
+                            variant: "destructive",
+                            title: "Erro no Scanner",
+                            description: "Não foi possível ler o código. Tente novamente.",
+                        });
+                    }
+                });
             }
-            if (error && !(error instanceof zxing.NotFoundException)) {
-              console.error('ZXing error:', error);
-            }
-          });
+        } catch (err) {
+            console.error("Failed to start scanner:", err);
+            setHasCameraPermission(false);
         }
-      } catch (err) {
-        // Se houver um erro, significa que a permissão foi negada
-        console.error("Failed to start scanner:", err);
-        setHasCameraPermission(false);
-      }
     };
 
     startScanner();
 
-    // Função de limpeza para parar a câmera ao sair
     return () => {
-      controls?.stop();
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
+        controls?.stop();
+        if (videoRef.current && videoRef.current.srcObject) {
+            const stream = videoRef.current.srcObject as MediaStream;
+            stream.getTracks().forEach(track => track.stop());
+            videoRef.current.srcObject = null;
+        }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
