@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const OccurrenceFormSchema = z.object({
   scannedCode: z.string(),
   occurrence: z.string(),
-  photo: z.any(),
+  photo: z.any(), // Can be File or string (data URI)
   receiverName: z.string().optional(),
   receiverDocument: z.string().optional(),
   latitude: z.number(),
@@ -11,3 +11,5 @@ export const OccurrenceFormSchema = z.object({
 });
 
 export type OccurrenceFormData = z.infer<typeof OccurrenceFormSchema>;
+
+    
