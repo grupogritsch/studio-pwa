@@ -100,10 +100,10 @@ export function ScanForm() {
     }
 
     let controls: IScannerControls | undefined;
-    let codeReader: BrowserQRCodeReader | undefined;
 
     const startScanner = async () => {
       setIsScannerBusy(true);
+      setHasCameraPermission(null);
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         setHasCameraPermission(true);
@@ -111,7 +111,7 @@ export function ScanForm() {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           const zxing = await import('@zxing/browser');
-          codeReader = new zxing.BrowserQRCodeReader();
+          const codeReader = new zxing.BrowserQRCodeReader();
 
           controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error) => {
             if (result) {
@@ -130,11 +130,6 @@ export function ScanForm() {
       } catch (err) {
         console.error("Failed to start scanner:", err);
         setHasCameraPermission(false);
-        toast({
-          variant: 'destructive',
-          title: 'Acesso à Câmera Negado',
-          description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador para usar esta função.',
-        });
       } finally {
         setIsScannerBusy(false);
       }
