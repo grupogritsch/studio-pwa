@@ -1,12 +1,21 @@
 
-const runtimeCaching = require('next-pwa/cache');
-
 module.exports = {
   dest: 'public',
   register: true,
   skipWaiting: true,
-  runtimeCaching,
   workboxOptions: {
     clientsClaim: true,
   },
+  runtimeCaching: [
+    {
+      urlPattern: /^https?.*/,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'offlineCache',
+        expiration: {
+          maxEntries: 200,
+        },
+      },
+    },
+  ],
 };
