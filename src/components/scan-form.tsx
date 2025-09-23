@@ -130,8 +130,8 @@ export function ScanForm() {
     const startScanner = async () => {
         try {
             const zxing = await import('@zxing/browser');
-            const { BrowserQRCodeReader } = zxing;
-            const codeReader = new BrowserQRCodeReader();
+            const { BrowserMultiFormatReader } = zxing;
+            const codeReader = new BrowserMultiFormatReader();
 
             if (!videoRef.current || !isMounted) return;
 
@@ -230,10 +230,12 @@ export function ScanForm() {
     window.addEventListener('offline', handleOffline);
 
     // Initial state
-    setIsOffline(!navigator.onLine);
-    
-    // Initial sync check
-    syncOfflineData();
+    if (typeof window !== 'undefined') {
+        setIsOffline(!navigator.onLine);
+        if (navigator.onLine) {
+          syncOfflineData();
+        }
+    }
 
     return () => {
       window.removeEventListener('online', handleOnline);
