@@ -101,6 +101,8 @@ export function ScanForm() {
   };
   
   useEffect(() => {
+    if(typeof window === 'undefined') return;
+
     const handleOnline = () => {
       setIsOffline(false);
       toast({
@@ -199,7 +201,7 @@ export function ScanForm() {
     const startScanner = async () => {
         try {
             const zxing = await import('@zxing/browser');
-            const { BrowserMultiFormatReader, BarcodeFormat } = zxing;
+            const { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } = zxing;
             const hints = new Map();
             const formats = [
                 BarcodeFormat.QR_CODE, 
@@ -207,13 +209,13 @@ export function ScanForm() {
                 BarcodeFormat.EAN_13,
                 BarcodeFormat.ITF,
             ];
-            hints.set(zxing.DecodeHintType.POSSIBLE_FORMATS, formats);
+            hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
             
             const codeReader = new BrowserMultiFormatReader(hints);
 
             if (!videoRef.current || !isMounted) return;
 
-            controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error, ctrls) => {
+            controls = codeReader.decodeFromVideoElement(videoRef.current, (result, error, ctrls) => {
                 if (!isMounted) {
                     ctrls.stop();
                     return;
@@ -247,7 +249,6 @@ export function ScanForm() {
             videoRef.current.srcObject = null;
         }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, hasCameraPermission]);
 
   const occurrenceValue = form.watch('occurrence');
@@ -534,5 +535,3 @@ export function ScanForm() {
     </Card>
   );
 }
-
-    
