@@ -37,7 +37,7 @@ import { useToast } from '@/hooks/use-toast';
 import { submitOccurrence } from '@/lib/actions';
 import { Camera, FileText, Loader2, Package, ScanLine, Send, User, WifiOff, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import type { BrowserQRCodeReader, IScannerControls } from '@zxing/browser';
+import type { IScannerControls } from '@zxing/browser';
 
 const formSchema = z.object({
   scannedCode: z.string({ required_error: "Código é obrigatório." }).min(1, "Código é obrigatório."),
@@ -80,7 +80,6 @@ export function ScanForm() {
   const [step, setStep] = useState<'scan' | 'form'>('scan');
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
-  const [isScannerBusy, setIsScannerBusy] = useState(true);
   const router = useRouter();
 
 
@@ -100,12 +99,11 @@ export function ScanForm() {
     }
 
     let controls: IScannerControls | undefined;
+    let stream: MediaStream | undefined;
 
     const startScanner = async () => {
-      setIsScannerBusy(true);
-      setHasCameraPermission(null);
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         setHasCameraPermission(true);
         
         if (videoRef.current) {
@@ -130,8 +128,6 @@ export function ScanForm() {
       } catch (err) {
         console.error("Failed to start scanner:", err);
         setHasCameraPermission(false);
-      } finally {
-        setIsScannerBusy(false);
       }
     };
 
@@ -139,10 +135,8 @@ export function ScanForm() {
 
     return () => {
       controls?.stop();
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
+      if (stream) {
         stream.getTracks().forEach(track => track.stop());
-        videoRef.current.srcObject = null;
       }
     };
   }, [step, form, toast]);
@@ -316,7 +310,7 @@ export function ScanForm() {
           <div className="w-3/4 h-1/3 border-4 border-dashed border-white/50 rounded-lg" />
         </div>
         
-        {(isScannerBusy || hasCameraPermission === null) && (
+        {hasCameraPermission === null && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
                 <Loader2 className="h-10 w-10 animate-spin text-white mb-4" />
                 <p className="text-white">Iniciando câmera...</p>
