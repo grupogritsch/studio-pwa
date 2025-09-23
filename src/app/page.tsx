@@ -64,6 +64,8 @@ export default function Home() {
           title: "Sincronização completa!",
           description: `${offlineDataToSync.length} ocorrências offline foram enviadas.`,
         });
+        // Refresh the main list after sync
+        loadData();
       }
     };
 
@@ -109,11 +111,11 @@ export default function Home() {
         <div style={{
           fontSize: '32px',
           fontWeight: 'bold',
-          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontFamily: 'Roboto Bold',
           letterSpacing: '1px',
           textAlign: 'center'
         }}>
-          <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FF914D' }}>K</span>
+          <span style={{color:'#ffffff'}}>SCAN</span><span style={{ color: '#FFA500' }}>TRACKER</span>
         </div>
       </header>
       <main className="flex flex-1 flex-col items-center p-4 text-center">

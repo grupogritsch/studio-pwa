@@ -45,7 +45,7 @@ const formSchema = z.object({
   occurrence: z.string({ required_error: "Selecione uma ocorrência." }).min(1, "Selecione uma ocorrência."),
   photo: z.union([
     z.string().min(1, "Foto é obrigatória.").optional(),
-    z.instanceof(File).optional(),
+    z.instanceof(Blob).optional(),
   ]),
   receiverName: z.string().optional(),
   receiverDocument: z.string().optional(),
@@ -204,11 +204,11 @@ export function ScanForm() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      form.setValue('photo', file, { shouldValidate: true });
       const reader = new FileReader();
       reader.onloadend = () => {
         const result = reader.result as string;
         setImagePreview(result);
-        form.setValue('photo', result, { shouldValidate: true });
       };
       reader.readAsDataURL(file);
     }
@@ -228,15 +228,15 @@ export function ScanForm() {
     };
 
     try {
+        await db.addOccurrence(occurrenceData);
+
         if (isOffline) {
             let photoBlob: Blob | undefined;
-            if (imagePreview) {
-                photoBlob = await dataURLtoBlob(imagePreview);
+            if (values.photo instanceof Blob) {
+                photoBlob = values.photo;
             }
             await db.addOfflineOccurrence({ ...occurrenceData, photo: photoBlob });
         }
-
-        await db.addOccurrence(occurrenceData);
         
         toast({
           title: isOffline ? "Salvo para envio posterior" : "Ocorrência registrada!",
@@ -316,11 +316,11 @@ export function ScanForm() {
         <div style={{
           fontSize: '32px',
           fontWeight: 'bold',
-          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontFamily: 'Roboto Bold',
           letterSpacing: '1px',
           textAlign: 'center'
         }}>
-          <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FF914D' }}>K</span>
+          <span style={{color:'#ffffff'}}>SCAN</span><span style={{ color: '#FFA500' }}>TRACKER</span>
         </div>
       </header>
       <main className="flex-1 flex flex-col items-center justify-start gap-4 p-4 md:gap-8 md:p-10 w-full mb-24">
