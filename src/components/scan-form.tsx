@@ -129,34 +129,39 @@ export function ScanForm() {
   
   
 useEffect(() => {
+    if (step !== 'scan') {
+      return;
+    }
+
+    let zxing: typeof import('@zxing/browser');
     const startScanner = async () => {
-      if (step !== 'scan' || hasCameraPermission === false) {
+      if (hasCameraPermission === false || !videoRef.current) {
         return;
       }
 
       try {
-        const { BrowserQRCodeReader, NotFoundException } = await import('@zxing/browser');
-        const codeReader = new BrowserQRCodeReader();
+        zxing = await import('@zxing/browser');
+        const codeReader = new zxing.BrowserQRCodeReader();
 
-        // Get camera permission first
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        setHasCameraPermission(true);
+        // Get camera permission first if not already granted
+        if (hasCameraPermission === null) {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          setHasCameraPermission(true);
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+        }
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-
+        if (videoRef.current && hasCameraPermission) {
           // Now start decoding
-          codeReader.decodeFromVideoElement(videoRef.current, (result, error, controls) => {
-            if (controls && !scannerControlsRef.current) {
-              scannerControlsRef.current = controls;
-            }
+          const controls = await codeReader.decodeFromVideoElement(videoRef.current, (result, error) => {
             if (result) {
               scannerControlsRef.current?.stop();
               scannerControlsRef.current = null;
               setScannedCode(result.getText());
               setStep('form');
             }
-            if (error && !(error instanceof NotFoundException)) {
+            if (error && !(error instanceof zxing.NotFoundException)) {
               console.error("Scanner Error:", error);
               toast({
                 variant: "destructive",
@@ -165,19 +170,37 @@ useEffect(() => {
               });
             }
           });
+          scannerControlsRef.current = controls;
         }
       } catch (err) {
         console.error("Failed to get camera permission or start scanner:", err);
-        setHasCameraPermission(false);
-        toast({
-          variant: "destructive",
-          title: "Câmera não autorizada",
-          description: "Você precisa permitir o acesso à câmera para continuar.",
-        });
+        if((err as Error).name === 'NotAllowedError') {
+             setHasCameraPermission(false);
+            toast({
+                variant: "destructive",
+                title: "Câmera não autorizada",
+                description: "Você precisa permitir o acesso à câmera para continuar.",
+            });
+        }
       }
     };
-
-    if (step === 'scan') {
+    
+    // Request permission on component mount for the scan step
+    if(hasCameraPermission === null) {
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            .then(stream => {
+                 if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                 }
+                setHasCameraPermission(true);
+            })
+            .catch(err => {
+                console.error("Camera permission denied:", err);
+                setHasCameraPermission(false);
+            })
+    }
+    
+    if (hasCameraPermission) {
         startScanner();
     }
 
@@ -185,6 +208,11 @@ useEffect(() => {
       if (scannerControlsRef.current) {
         scannerControlsRef.current.stop();
         scannerControlsRef.current = null;
+      }
+       if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
       }
     };
   }, [step, hasCameraPermission, toast]);
@@ -258,15 +286,6 @@ useEffect(() => {
   };
 
   const handleGoBack = () => {
-    if (scannerControlsRef.current) {
-        scannerControlsRef.current.stop();
-        scannerControlsRef.current = null;
-    }
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-    }
     router.push('/');
   };
 
@@ -463,5 +482,7 @@ useEffect(() => {
         </Button>
       </footer>
     </>
-  );
+    );
 }
+
+    
