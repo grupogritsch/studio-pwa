@@ -3,6 +3,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { Plus } from 'lucide-react';
 
 export default function Home() {
   const router = useRouter();
@@ -29,13 +30,15 @@ export default function Home() {
           Nenhuma ocorrência registrada ainda.
         </h2>
       </main>
-      <footer className="sticky bottom-0 z-10 border-t bg-secondary/50 p-4 backdrop-blur-sm">
+      <footer className="sticky bottom-0 z-10 flex justify-center border-t bg-transparent p-4">
         <Button
-          size="lg"
-          className="h-14 w-full text-lg"
+          variant="default"
+          size="icon"
+          className="h-16 w-16 rounded-full shadow-lg"
           onClick={handleNewOccurrence}
+          aria-label="Nova Ocorrência"
         >
-          Nova Ocorrência
+          <Plus className="h-8 w-8" />
         </Button>
       </footer>
     </div>
