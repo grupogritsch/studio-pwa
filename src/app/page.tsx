@@ -30,7 +30,7 @@ export default function Home() {
           Nenhuma ocorrência registrada ainda.
         </h2>
       </main>
-      <footer className="sticky bottom-0 z-10 flex justify-center border-t bg-transparent p-4">
+      <footer className="sticky bottom-0 z-10 flex justify-center bg-transparent p-4">
         <Button
           variant="default"
           size="icon"
@@ -38,7 +38,7 @@ export default function Home() {
           onClick={handleNewOccurrence}
           aria-label="Nova Ocorrência"
         >
-          <Plus className="h-8 w-8" />
+          <Plus className="h-10 w-10" />
         </Button>
       </footer>
     </div>
