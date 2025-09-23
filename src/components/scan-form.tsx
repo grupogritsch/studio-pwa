@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useTransition, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -34,16 +35,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { submitOccurrence } from '@/lib/actions';
-import { Camera, FileText, Loader2, Package, Scan, ScanLine, Send, User, WifiOff } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogClose,
-} from "@/components/ui/dialog";
+import { Camera, FileText, Loader2, Package, Scan, ScanLine, Send, User, WifiOff, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const formSchema = z.object({
@@ -84,11 +76,13 @@ export function ScanForm() {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const [isOffline, setIsOffline] = useState(false);
-  const [isScannerOpen, setScannerOpen] = useState(false);
+  const [step, setStep] = useState<'scan' | 'form'>('scan');
   const videoRef = useRef<HTMLVideoElement>(null);
   const [Zxing, setZxing] = useState<any>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
-  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [isScannerStarting, setIsScannerStarting] = useState(true);
+  const router = useRouter();
+
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -106,39 +100,18 @@ export function ScanForm() {
     });
   }, []);
 
-  const openScanner = async () => {
-    setIsRequestingPermission(true);
-    try {
-      // Check for permission before opening the dialog
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      stream.getTracks().forEach(track => track.stop()); // Stop stream immediately, we'll request it again in the dialog
-      setHasCameraPermission(true);
-      setScannerOpen(true);
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      setHasCameraPermission(false);
-      toast({
-        variant: 'destructive',
-        title: 'Acesso à Câmera Negado',
-        description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
-      });
-    } finally {
-      setIsRequestingPermission(false);
-    }
-  };
-
   useEffect(() => {
     let codeReader: any;
     let stream: MediaStream;
 
     const startScanner = async () => {
-      if (isScannerOpen && Zxing && videoRef.current) {
+      if (step === 'scan' && Zxing && videoRef.current) {
+        setIsScannerStarting(true);
         try {
-          // We already asked for permission in openScanner, but some browsers might require it again
-          // or state might have changed. It's safer to just get the stream here.
-          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }});
-          
-          if(videoRef.current) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          setHasCameraPermission(true);
+
+          if (videoRef.current) {
             videoRef.current.srcObject = stream;
           }
 
@@ -146,10 +119,10 @@ export function ScanForm() {
           codeReader.decodeFromVideoStream(stream, videoRef.current, (result, err) => {
             if (result) {
               form.setValue('scannedCode', result.getText());
-              setScannerOpen(false);
+              setStep('form');
               toast({
                 title: "Código lido!",
-                description: "O código foi preenchido.",
+                description: "Continue para preencher a ocorrência.",
               });
             }
             if (err && !(err instanceof Zxing.NotFoundException)) {
@@ -169,14 +142,14 @@ export function ScanForm() {
             title: 'Erro ao Iniciar Câmera',
             description: 'Não foi possível iniciar o scanner. Verifique as permissões e tente novamente.',
           });
-          setScannerOpen(false);
+          setStep('form'); // Go to form to allow manual input
+        } finally {
+            setIsScannerStarting(false);
         }
       }
     };
 
-    if (isScannerOpen) {
-        startScanner();
-    }
+    startScanner();
 
     return () => {
       if (codeReader) {
@@ -186,7 +159,7 @@ export function ScanForm() {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [isScannerOpen, Zxing, form, toast]);
+  }, [step, Zxing, form, toast]);
 
 
   useEffect(() => {
@@ -214,7 +187,6 @@ export function ScanForm() {
       setIsOffline(!navigator.onLine);
     }
 
-    // First sync on load
     syncOfflineData();
 
     return () => {
@@ -298,8 +270,7 @@ export function ScanForm() {
       title: "Salvo para envio posterior",
       description: "A ocorrência foi salva e será enviada quando houver conexão.",
     });
-    form.reset();
-    setImagePreview(null);
+    router.push('/');
   };
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
@@ -334,8 +305,7 @@ export function ScanForm() {
             title: "Sucesso!",
             description: result.message,
           });
-          form.reset();
-          setImagePreview(null);
+          router.push('/');
         } else {
           throw new Error(result.message || "Ocorreu um erro desconhecido.");
         }
@@ -352,189 +322,190 @@ export function ScanForm() {
     });
   };
 
-  return (
-    <>
-      <Card className="w-full shadow-lg">
-        <CardHeader>
-          <div className="flex justify-between items-center">
-             <CardTitle>Registrar Ocorrência</CardTitle>
-             {isOffline && <WifiOff className="h-5 w-5 text-destructive" />}
-          </div>
-          <CardDescription>Leia o código, escolha a ocorrência e anexe uma foto.</CardDescription>
-        </CardHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
-            <CardContent className="space-y-6">
-              <FormField
-                control={form.control}
-                name="scannedCode"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Código de Barras / CTE</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                        <Input placeholder="Leia ou digite o código" {...field} className="pl-10 pr-10" />
-                        <Button type="button" size="icon" variant="ghost" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" onClick={openScanner} disabled={isRequestingPermission}>
-                          {isRequestingPermission ? <Loader2 className="h-5 w-5 animate-spin" /> : <Scan className="h-5 w-5" />}
-                        </Button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="occurrence"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Ocorrência</FormLabel>
-                     <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                           <Package className="mr-2 h-5 w-5 text-muted-foreground" />
-                          <SelectValue placeholder="Selecione o tipo de ocorrência" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="entregue">Entregue</SelectItem>
-                        <SelectItem value="avaria">Avaria</SelectItem>
-                        <SelectItem value="extravio">Extravio</SelectItem>
-                        <SelectItem value="devolucao">Devolução</SelectItem>
-                        <SelectItem value="recusado">Recusado pelo destinatário</SelectItem>
-                        <SelectItem value="outros">Outros</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {occurrenceValue === 'entregue' && (
-                <div className="space-y-6 rounded-md border bg-secondary/30 p-4 animate-in fade-in-50">
-                  <p className="text-sm font-medium text-foreground">Dados do Recebedor</p>
-                   <FormField
-                    control={form.control}
-                    name="receiverName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nome do Recebedor</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                            <Input placeholder="Nome de quem recebeu" {...field} className="pl-10" />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                   <FormField
-                    control={form.control}
-                    name="receiverDocument"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Documento do Recebedor (RG/CPF)</FormLabel>
-                        <FormControl>
-                           <div className="relative">
-                             <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                             <Input placeholder="Documento de quem recebeu" {...field} className="pl-10"/>
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              )}
-              
-              <FormField
-                control={form.control}
-                name="photo"
-                render={() => (
-                  <FormItem>
-                    <FormLabel>Foto da Ocorrência</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Button asChild variant="outline" className="w-full">
-                          <label htmlFor="photo-upload" className="cursor-pointer">
-                            <Camera className="mr-2 h-5 w-5" />
-                            Tirar Foto
-                          </label>
-                        </Button>
-                        <Input 
-                          id="photo-upload"
-                          type="file" 
-                          className="sr-only" 
-                          accept="image/*" 
-                          capture="environment"
-                          onChange={handleFileChange}
-                        />
-                      </div>
-                    </FormControl>
-                    <FormDescription>
-                      Anexe uma foto clara do comprovante ou da avaria.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {imagePreview && (
-                <div className="relative w-full max-w-sm mx-auto aspect-video overflow-hidden rounded-lg border">
-                  <Image src={imagePreview} alt="Pré-visualização da foto" layout="fill" objectFit="contain" />
-                </div>
-              )}
-
-            </CardContent>
-            <CardFooter>
-              <Button type="submit" disabled={isPending} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
-                {isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Enviando...
-                  </>
-                ) : (
-                  <>
-                    <Send className="mr-2 h-4 w-4" />
-                    Enviar Ocorrência
-                  </>
-                )}
-              </Button>
-            </CardFooter>
-          </form>
-        </Form>
-      </Card>
-
-      <Dialog open={isScannerOpen} onOpenChange={setScannerOpen}>
-        <DialogContent className="max-w-full w-full h-full max-h-screen p-0 m-0">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Scanner de Código</DialogTitle>
-            <DialogDescription>Aponte a câmera para o código de barras ou QR code.</DialogDescription>
-          </DialogHeader>
-          <div className="relative w-full h-full">
-             <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
-             {hasCameraPermission === false && (
-               <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+  if (step === 'scan') {
+    return (
+      <div className="fixed inset-0 bg-black">
+        <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-3/4 h-1/3 border-4 border-dashed border-white/50 rounded-lg" />
+        </div>
+        {isScannerStarting && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
+                <Loader2 className="h-10 w-10 animate-spin text-white mb-4" />
+                <p className="text-white">Iniciando câmera...</p>
+            </div>
+        )}
+        {hasCameraPermission === false && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/80">
                 <Alert variant="destructive" className="max-w-sm">
                   <AlertTitle>Acesso à Câmera Negado</AlertTitle>
                   <AlertDescription>
-                    Por favor, habilite a permissão da câmera nas configurações do seu navegador para usar o scanner.
+                    Por favor, habilite a permissão da câmera nas configurações do seu navegador e atualize a página.
                   </AlertDescription>
                 </Alert>
-               </div>
-             )}
-          </div>
-          <DialogFooter className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
-            <DialogClose asChild>
-              <Button type="button" variant="secondary">
-                Cancelar
-              </Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+            </div>
+        )}
+        <Button 
+            variant="secondary"
+            className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10"
+            onClick={() => router.push('/')}
+        >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Voltar
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Card className="w-full shadow-lg">
+      <CardHeader>
+        <div className="flex justify-between items-center">
+           <CardTitle>Registrar Ocorrência</CardTitle>
+           {isOffline && <WifiOff className="h-5 w-5 text-destructive" />}
+        </div>
+        <CardDescription>Preencha os dados da ocorrência e anexe uma foto.</CardDescription>
+      </CardHeader>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)}>
+          <CardContent className="space-y-6">
+            <FormField
+              control={form.control}
+              name="scannedCode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Código de Barras / CTE</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                      <Input placeholder="Leia ou digite o código" {...field} className="pl-10" />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="occurrence"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Ocorrência</FormLabel>
+                   <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                         <Package className="mr-2 h-5 w-5 text-muted-foreground" />
+                        <SelectValue placeholder="Selecione o tipo de ocorrência" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="entregue">Entregue</SelectItem>
+                      <SelectItem value="avaria">Avaria</SelectItem>
+                      <SelectItem value="extravio">Extravio</SelectItem>
+                      <SelectItem value="devolucao">Devolução</SelectItem>
+                      <SelectItem value="recusado">Recusado pelo destinatário</SelectItem>
+                      <SelectItem value="outros">Outros</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {occurrenceValue === 'entregue' && (
+              <div className="space-y-6 rounded-md border bg-secondary/30 p-4 animate-in fade-in-50">
+                <p className="text-sm font-medium text-foreground">Dados do Recebedor</p>
+                 <FormField
+                  control={form.control}
+                  name="receiverName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Nome do Recebedor</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                          <Input placeholder="Nome de quem recebeu" {...field} className="pl-10" />
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                 <FormField
+                  control={form.control}
+                  name="receiverDocument"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Documento do Recebedor (RG/CPF)</FormLabel>
+                      <FormControl>
+                         <div className="relative">
+                           <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                           <Input placeholder="Documento de quem recebeu" {...field} className="pl-10"/>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+            
+            <FormField
+              control={form.control}
+              name="photo"
+              render={() => (
+                <FormItem>
+                  <FormLabel>Foto da Ocorrência</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Button asChild variant="outline" className="w-full">
+                        <label htmlFor="photo-upload" className="cursor-pointer">
+                          <Camera className="mr-2 h-5 w-5" />
+                          Tirar Foto
+                        </label>
+                      </Button>
+                      <Input 
+                        id="photo-upload"
+                        type="file" 
+                        className="sr-only" 
+                        accept="image/*" 
+                        capture="environment"
+                        onChange={handleFileChange}
+                      />
+                    </div>
+                  </FormControl>
+                  <FormDescription>
+                    Anexe uma foto clara do comprovante ou da avaria.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {imagePreview && (
+              <div className="relative w-full max-w-sm mx-auto aspect-video overflow-hidden rounded-lg border">
+                <Image src={imagePreview} alt="Pré-visualização da foto" layout="fill" objectFit="contain" />
+              </div>
+            )}
+
+          </CardContent>
+          <CardFooter>
+            <Button type="submit" disabled={isPending} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
+              {isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  Enviar Ocorrência
+                </>
+              )}
+            </Button>
+          </CardFooter>
+        </form>
+      </Form>
+    </Card>
   );
 }
