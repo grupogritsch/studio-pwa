@@ -44,6 +44,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const formSchema = z.object({
   scannedCode: z.string({ required_error: "Código é obrigatório." }).min(1, "Código é obrigatório."),
@@ -86,6 +87,8 @@ export function ScanForm() {
   const [isScannerOpen, setScannerOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [Zxing, setZxing] = useState<any>(null);
+  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -103,13 +106,33 @@ export function ScanForm() {
     });
   }, []);
 
-  const openScanner = () => {
-    setScannerOpen(true);
+  const openScanner = async () => {
+    setIsRequestingPermission(true);
+    try {
+      // Check for camera permission
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      // Stop the tracks immediately to free up camera, zxing will ask for it again
+      stream.getTracks().forEach(track => track.stop());
+      setHasCameraPermission(true);
+      setScannerOpen(true);
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+      setHasCameraPermission(false);
+      setScannerOpen(true); // Open dialog to show the error
+      toast({
+        variant: 'destructive',
+        title: 'Acesso à Câmera Negado',
+        description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
+      });
+    } finally {
+      setIsRequestingPermission(false);
+    }
   };
   
   useEffect(() => {
-    if (isScannerOpen && Zxing && videoRef.current) {
-      const codeReader = new Zxing.BrowserQRCodeReader();
+    let codeReader: any;
+    if (isScannerOpen && hasCameraPermission && Zxing && videoRef.current) {
+      codeReader = new Zxing.BrowserQRCodeReader();
       codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, err) => {
         if (result) {
           form.setValue('scannedCode', result.getText());
@@ -121,18 +144,23 @@ export function ScanForm() {
         }
         if (err && !(err instanceof Zxing.NotFoundException)) {
           console.error(err);
-          toast({
+          // Don't toast on every frame decode error
+        }
+      }).catch((err: any) => {
+          console.error("Decode error", err);
+           toast({
             variant: "destructive",
             title: "Erro no Scanner",
-            description: "Não foi possível ler o código.",
+            description: "Não foi possível iniciar o leitor de código.",
           });
-        }
       });
-      return () => {
-        codeReader.reset();
-      };
     }
-  }, [isScannerOpen, Zxing, form, toast]);
+    return () => {
+      if (codeReader) {
+        codeReader.reset();
+      }
+    };
+  }, [isScannerOpen, hasCameraPermission, Zxing, form, toast]);
 
 
   useEffect(() => {
@@ -321,8 +349,8 @@ export function ScanForm() {
                       <div className="relative">
                         <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                         <Input placeholder="Leia ou digite o código" {...field} className="pl-10 pr-10" />
-                        <Button type="button" size="icon" variant="ghost" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" onClick={openScanner}>
-                          <Scan className="h-5 w-5" />
+                        <Button type="button" size="icon" variant="ghost" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" onClick={openScanner} disabled={isRequestingPermission}>
+                          {isRequestingPermission ? <Loader2 className="h-5 w-5 animate-spin" /> : <Scan className="h-5 w-5" />}
                         </Button>
                       </div>
                     </FormControl>
@@ -461,7 +489,19 @@ export function ScanForm() {
               Aponte a câmera para o código de barras ou QR code.
             </DialogDescription>
           </DialogHeader>
-          <video ref={videoRef} className="w-full aspect-video rounded-md" />
+          <div className="relative">
+             <video ref={videoRef} className="w-full aspect-video rounded-md bg-black" />
+             {hasCameraPermission === false && (
+               <div className="absolute inset-0 flex items-center justify-center bg-black/80 rounded-md">
+                <Alert variant="destructive" className="max-w-sm">
+                  <AlertTitle>Acesso à Câmera Negado</AlertTitle>
+                  <AlertDescription>
+                    Por favor, habilite a permissão da câmera nas configurações do seu navegador para usar o scanner.
+                  </AlertDescription>
+                </Alert>
+               </div>
+             )}
+          </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="secondary">
@@ -474,5 +514,3 @@ export function ScanForm() {
     </>
   );
 }
-
-    
