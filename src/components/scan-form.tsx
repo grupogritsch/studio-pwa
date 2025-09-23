@@ -93,50 +93,69 @@ export function ScanForm() {
       receiverDocument: '',
     },
   });
-  
+
+  // Effect 1: Request camera permission
   useEffect(() => {
     if (step !== 'scan') {
         return;
     }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(stream => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+        setHasCameraPermission(true);
+      })
+      .catch(err => {
+        console.error("Failed to get camera permission:", err);
+        setHasCameraPermission(false);
+      });
+  }, [step]);
+  
+  // Effect 2: Start/Stop scanner based on permission
+  useEffect(() => {
+    if (step !== 'scan' || hasCameraPermission !== true || !videoRef.current) {
+      return;
+    }
 
     let controls: IScannerControls | undefined;
+    let isMounted = true;
 
     const startScanner = async () => {
         try {
             const zxing = await import('@zxing/browser');
-            const { NotFoundException } = zxing;
-            const codeReader = new zxing.BrowserQRCodeReader();
-            
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-            
-            setHasCameraPermission(true);
+            const { BrowserQRCodeReader, NotFoundException } = zxing;
+            const codeReader = new BrowserQRCodeReader();
 
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error, ctrls) => {
-                    if (result) {
-                        ctrls.stop();
-                        form.setValue('scannedCode', result.getText());
-                        setStep('form');
-                        toast({
-                            title: "Código lido!",
-                            description: "Continue para preencher a ocorrência.",
-                        });
-                    }
-                    if (error && !(error instanceof NotFoundException)) {
-                        console.error('ZXing error:', error);
-                    }
-                });
-            }
+            if (!videoRef.current || !isMounted) return;
+
+            controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error, ctrls) => {
+                if (!isMounted) {
+                    ctrls.stop();
+                    return;
+                }
+                if (result) {
+                    ctrls.stop();
+                    form.setValue('scannedCode', result.getText());
+                    setStep('form');
+                    toast({
+                        title: "Código lido!",
+                        description: "Continue para preencher a ocorrência.",
+                    });
+                }
+                if (error && !(error instanceof NotFoundException)) {
+                    console.error('ZXing error:', error);
+                }
+            });
         } catch (err) {
             console.error("Failed to start scanner:", err);
-            setHasCameraPermission(false);
         }
     };
 
     startScanner();
 
     return () => {
+        isMounted = false;
         controls?.stop();
         if (videoRef.current && videoRef.current.srcObject) {
             const stream = videoRef.current.srcObject as MediaStream;
@@ -145,7 +164,7 @@ export function ScanForm() {
         }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+  }, [step, hasCameraPermission]);
 
 
   useEffect(() => {
@@ -320,7 +339,7 @@ export function ScanForm() {
         {hasCameraPermission === null && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
                 <Loader2 className="h-10 w-10 animate-spin text-white mb-4" />
-                <p className="text-white">Iniciando câmera...</p>
+                <p className="text-white">Solicitando permissão da câmera...</p>
             </div>
         )}
 
@@ -339,7 +358,14 @@ export function ScanForm() {
         <Button 
             variant="secondary"
             className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10"
-            onClick={() => router.push('/')}
+            onClick={() => {
+              if (videoRef.current && videoRef.current.srcObject) {
+                const stream = videoRef.current.srcObject as MediaStream;
+                stream.getTracks().forEach(track => track.stop());
+                videoRef.current.srcObject = null;
+              }
+              router.push('/');
+            }}
         >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Voltar
