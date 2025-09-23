@@ -130,57 +130,54 @@ export function ScanForm() {
   
   useEffect(() => {
     const startScanner = async () => {
-      try {
-        // Ensure library is loaded before using its classes
-        const { BrowserQRCodeReader, NotFoundException } = await import('@zxing/browser');
-        
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+        if (step !== 'scan' || hasCameraPermission === false || scannerControlsRef.current) {
+            return;
         }
-        setHasCameraPermission(true);
 
-        const codeReader = new BrowserQRCodeReader();
+        try {
+            const { BrowserQRCodeReader, NotFoundException } = await import('@zxing/browser');
+            const codeReader = new BrowserQRCodeReader();
 
-        if (videoRef.current) {
-          scannerControlsRef.current = codeReader.decodeFromVideoElement(videoRef.current, (result, error, controls) => {
-            if (result) {
-              controls.stop();
-              scannerControlsRef.current = null;
-              setScannedCode(result.getText());
-              setStep('form');
+            if (videoRef.current) {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                videoRef.current.srcObject = stream;
+                setHasCameraPermission(true);
+
+                scannerControlsRef.current = codeReader.decodeFromVideoElement(videoRef.current, (result, error, controls) => {
+                    if (result) {
+                        controls.stop();
+                        scannerControlsRef.current = null;
+                        setScannedCode(result.getText());
+                        setStep('form');
+                    }
+                    if (error && !(error instanceof NotFoundException)) {
+                        console.error("Scanner Error:", error);
+                        toast({
+                            variant: "destructive",
+                            title: "Erro de Scanner",
+                            description: "Ocorreu um erro ao tentar ler o código.",
+                        });
+                    }
+                });
             }
-            // Check for NotFoundException safely
-            if (error && !(error instanceof NotFoundException)) {
-              console.error("Scanner Error:", error);
-              toast({
+        } catch (err) {
+            console.error("Failed to get camera permission or start scanner:", err);
+            setHasCameraPermission(false);
+            toast({
                 variant: "destructive",
-                title: "Erro de Scanner",
-                description: "Ocorreu um erro ao tentar ler o código.",
-              });
-            }
-          });
+                title: "Câmera não autorizada",
+                description: "Você precisa permitir o acesso à câmera para continuar.",
+            });
         }
-      } catch (err) {
-        console.error("Failed to start scanner:", err);
-        setHasCameraPermission(false);
-        toast({
-          variant: "destructive",
-          title: "Câmera não autorizada",
-          description: "Você precisa permitir o acesso à câmera para continuar.",
-        });
-      }
     };
 
-    if (step === 'scan' && hasCameraPermission !== false) {
-      startScanner();
-    }
-    
+    startScanner();
+
     return () => {
-      scannerControlsRef.current?.stop();
-      scannerControlsRef.current = null;
+        scannerControlsRef.current?.stop();
+        scannerControlsRef.current = null;
     };
-  }, [step, toast, hasCameraPermission]);
+}, [step, hasCameraPermission, toast]);
 
 
   
@@ -458,3 +455,5 @@ export function ScanForm() {
     </>
   );
 }
+
+    
