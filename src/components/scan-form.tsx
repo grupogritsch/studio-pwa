@@ -34,8 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { submitOccurrence } from '@/lib/actions';
-import { Camera, FileText, Loader2, Package, ScanLine, Send, User, WifiOff, ArrowLeft } from 'lucide-react';
+import { Camera, FileText, Loader2, Package, Send, User, WifiOff, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { BrowserQRCodeReader, IScannerControls } from '@zxing/browser';
 import { NotFoundException } from '@zxing/library';
@@ -108,20 +107,15 @@ export function ScanForm() {
   
   const isCameraEnabled = requiresPhoto && occurrenceValue !== '';
   const isSendEnabled = (isHoliday && isValid) || (requiresPhoto && photoValue && isValid);
-
-
-  const dataURItoFile = async (dataURI: string, fileName: string): Promise<File> => {
-    const res = await fetch(dataURI);
-    const blob = await res.blob();
-    return new File([blob], fileName, { type: blob.type });
-  };
   
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    setIsOffline(!navigator.onLine);
+    if (typeof navigator.onLine !== 'undefined') {
+      setIsOffline(!navigator.onLine);
+    }
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -222,28 +216,30 @@ export function ScanForm() {
   const saveToLocal = async (values: z.infer<typeof formSchema>) => {
     if (typeof window.localStorage === 'undefined' || !scannedCode) return;
     
-    const occurrenceData = { 
-        ...values, 
-        scannedCode, 
-        timestamp: new Date().toISOString() 
-    };
+    const timestamp = new Date().toISOString();
 
     if(isOffline){
         const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
-        let photoDataUrl = values.photo;
-        if (values.photo instanceof File) {
-            photoDataUrl = await new Promise(resolve => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.readAsDataURL(values.photo as File);
-            });
-        }
-        offlineData.push({ ...occurrenceData, photo: photoDataUrl });
+        const offlineOccurrence = { 
+            ...values, 
+            scannedCode, 
+            timestamp,
+            photo: imagePreview // Save full base64 for offline sync
+        };
+        offlineData.push(offlineOccurrence);
         localStorage.setItem('offlineOccurrences', JSON.stringify(offlineData));
     }
 
+    const displayOccurrence = {
+        occurrence: values.occurrence,
+        receiverName: values.receiverName,
+        receiverDocument: values.receiverDocument,
+        scannedCode,
+        timestamp
+    };
+
     const localOccurrences = JSON.parse(localStorage.getItem('occurrences') || '[]');
-    localOccurrences.push(occurrenceData);
+    localOccurrences.push(displayOccurrence);
     localStorage.setItem('occurrences', JSON.stringify(localOccurrences));
     
     toast({
