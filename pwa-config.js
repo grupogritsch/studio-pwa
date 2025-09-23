@@ -1,3 +1,4 @@
+
 /** @type {import('next-pwa').PWAConfig} */
 module.exports = {
   dest: 'public',
