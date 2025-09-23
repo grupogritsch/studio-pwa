@@ -101,8 +101,10 @@ export function ScanForm() {
   };
   
   useEffect(() => {
-    if(typeof window === 'undefined') return;
-
+    if (typeof window === 'undefined') {
+      return;
+    }
+  
     const handleOnline = () => {
       setIsOffline(false);
       toast({
@@ -111,6 +113,7 @@ export function ScanForm() {
       });
       syncOfflineData();
     };
+  
     const handleOffline = () => {
       setIsOffline(true);
       toast({
@@ -119,8 +122,9 @@ export function ScanForm() {
         description: "Os dados serão salvos localmente e enviados quando a conexão voltar.",
       });
     };
-
+  
     const syncOfflineData = () => {
+      if (typeof window.localStorage === 'undefined') return;
       const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
       if (offlineData.length > 0 && navigator.onLine) {
         startTransition(async () => {
@@ -137,7 +141,7 @@ export function ScanForm() {
               console.error("Erro ao sincronizar:", error);
             }
           }
-          
+  
           if (allSucceeded) {
             localStorage.removeItem('offlineOccurrences');
             toast({
@@ -145,33 +149,33 @@ export function ScanForm() {
               description: `${offlineData.length} ocorrência(s) pendente(s) foi/foram enviada(s).`,
             });
           } else {
-              toast({
-                  variant: "destructive",
-                  title: "Falha na Sincronização",
-                  description: "Alguns dados não puderam ser enviados. Tente novamente mais tarde.",
-              });
+            toast({
+              variant: "destructive",
+              title: "Falha na Sincronização",
+              description: "Alguns dados não puderam ser enviados. Tente novamente mais tarde.",
+            });
           }
         });
       }
     };
-
+  
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
+  
     // Initial state
     if (typeof navigator !== 'undefined') {
-        setIsOffline(!navigator.onLine);
-        if (navigator.onLine) {
-            syncOfflineData();
-        }
+      setIsOffline(!navigator.onLine);
+      if (navigator.onLine) {
+        syncOfflineData();
+      }
     }
-    
+  
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]);
   
   // Effect 1: Request camera permission
   useEffect(() => {
@@ -207,15 +211,11 @@ export function ScanForm() {
 
             if (!videoRef.current) return;
 
-            controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error, ctrls) => {
+            controls = codeReader.decodeFromVideoElement(videoRef.current, (result, error, ctrls) => {
                 if (result) {
                     ctrls.stop();
                     form.setValue('scannedCode', result.getText());
                     setStep('form');
-                    toast({
-                        title: "Código lido!",
-                        description: "Continue para preencher a ocorrência.",
-                    });
                 }
                 if (error && error.name !== 'NotFoundException') {
                     console.error('ZXing error:', error);
@@ -223,11 +223,13 @@ export function ScanForm() {
             });
         } catch (err: any) {
              console.error("Failed to start scanner:", err);
-             toast({
-                variant: 'destructive',
-                title: 'Erro no Scanner',
-                description: `Não foi possível iniciar o scanner: ${err.message}`,
-             })
+             if (err && err.name !== 'NotFoundException') {
+                toast({
+                    variant: 'destructive',
+                    title: 'Erro no Scanner',
+                    description: `Não foi possível iniciar o scanner: ${err.message}`,
+                });
+             }
         }
     };
 
@@ -522,5 +524,3 @@ export function ScanForm() {
     </Card>
   );
 }
-
-    
