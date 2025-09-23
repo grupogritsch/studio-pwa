@@ -1,23 +1,22 @@
 {
   "name": "LOGISTIK",
   "short_name": "LOGISTIK",
-  "description": "Aplicativo de registro de ocorrências logísticas.",
+  "description": "App de logística para registro de ocorrências.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1C2B3A",
   "theme_color": "#1C2B3A",
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
     },
     {
-      "src": "/maskable_icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "maskable"
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
