@@ -6,4 +6,7 @@ module.exports = {
   register: true,
   skipWaiting: true,
   runtimeCaching,
+  workboxOptions: {
+    clientsClaim: true,
+  },
 };
