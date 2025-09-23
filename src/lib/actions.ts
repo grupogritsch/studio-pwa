@@ -1,21 +1,19 @@
+
 "use server";
 
 import { revalidatePath } from 'next/cache';
 import type { OccurrenceFormData } from './definitions';
 
-export async function submitOccurrence(data: OccurrenceFormData) {
-  console.log('Submitting data:', {
-    ...data,
-    photo: `File received: ${data.photo.name}, size: ${data.photo.size} bytes`
-  });
+export async function submitOccurrence(data: OccurrenceFormData & { scannedCode: string }) {
+  console.log('Submitting data:', { ...data });
 
   // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 1500));
+  await new Promise(resolve => setTimeout(resolve, 1000));
 
-  // In a real app, you would upload the photo to a storage service (like Firebase Storage)
-  // and save the rest of the data, along with the photo URL, to a database (like Firestore).
+  // In a real app, you would handle file upload and database saving.
+  // For now, we handle saving to localStorage on the client side.
 
-  console.log('Data submitted successfully.');
+  console.log('Data processed for client-side storage.');
 
   revalidatePath('/');
   return { success: true, message: 'Ocorrência registrada com sucesso!' };

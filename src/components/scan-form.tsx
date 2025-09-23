@@ -41,37 +41,38 @@ import type { IScannerControls } from '@zxing/browser';
 
 
 const formSchema = z.object({
-  scannedCode: z.string({ required_error: "Código é obrigatório." }).min(1, "Código é obrigatório."),
   occurrence: z.string({ required_error: "Selecione uma ocorrência." }).min(1, "Selecione uma ocorrência."),
   photo: z.union([
-    z.instanceof(File, { message: "Foto é obrigatória." }).refine(file => file.size > 0, "Foto é obrigatória."),
-    z.string().min(1, "Foto é obrigatória.") // for data URI
+    z.string().min(1, "Foto é obrigatória.").optional(),
+    z.instanceof(File).optional(),
   ]),
   receiverName: z.string().optional(),
   receiverDocument: z.string().optional(),
-}).refine(
-  (data) => {
+}).superRefine((data, ctx) => {
     if (data.occurrence === 'entregue') {
-      return data.receiverName && data.receiverName.length > 0;
+      if (!data.receiverName || data.receiverName.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Nome do recebedor é obrigatório para entrega.",
+          path: ["receiverName"],
+        });
+      }
+      if (!data.receiverDocument || data.receiverDocument.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Documento do recebedor é obrigatório para entrega.",
+          path: ["receiverDocument"],
+        });
+      }
+      if (!data.photo) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Foto é obrigatória para entrega.",
+            path: ["photo"],
+        });
+      }
     }
-    return true;
-  },
-  {
-    message: "Nome do recebedor é obrigatório para entrega.",
-    path: ["receiverName"],
-  }
-).refine(
-  (data) => {
-    if (data.occurrence === 'entregue') {
-      return data.receiverDocument && data.receiverDocument.length > 0;
-    }
-    return true;
-  },
-  {
-    message: "Documento do recebedor é obrigatório para entrega.",
-    path: ["receiverDocument"],
-  }
-);
+  });
 
 export function ScanForm() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -83,17 +84,30 @@ export function ScanForm() {
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const router = useRouter();
   const scannerControlsRef = useRef<IScannerControls | null>(null);
+  const [scannedCode, setScannedCode] = useState<string | null>(null);
 
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      scannedCode: '',
       occurrence: '',
       receiverName: '',
       receiverDocument: '',
     },
+    mode: "onChange",
   });
+
+  const occurrenceValue = form.watch('occurrence');
+  const photoValue = form.watch('photo');
+  const { isValid } = form.formState;
+
+  const isHoliday = occurrenceValue === 'feriado';
+  const isDelivered = occurrenceValue === 'entregue';
+  const requiresPhoto = isDelivered || ['avaria', 'extravio', 'devolucao', 'recusado', 'outros'].includes(occurrenceValue);
+  
+  const isCameraEnabled = requiresPhoto && occurrenceValue !== '';
+  const isSendEnabled = (isHoliday && isValid) || (requiresPhoto && photoValue && isValid);
+
 
   const dataURItoFile = async (dataURI: string, fileName: string): Promise<File> => {
     const res = await fetch(dataURI);
@@ -102,143 +116,70 @@ export function ScanForm() {
   };
   
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-  
-    const handleOnline = () => {
-      setIsOffline(false);
-      toast({
-        title: "Conexão reestabelecida!",
-        description: "Sincronizando dados pendentes...",
-      });
-      syncOfflineData();
-    };
-  
-    const handleOffline = () => {
-      setIsOffline(true);
-      toast({
-        variant: "destructive",
-        title: "Você está offline",
-        description: "Os dados serão salvos localmente e enviados quando a conexão voltar.",
-      });
-    };
-  
-    const syncOfflineData = async () => {
-      if (typeof window.localStorage === 'undefined') return;
-      const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
-      if (offlineData.length > 0 && navigator.onLine) {
-        startTransition(async () => {
-          let allSucceeded = true;
-          const remainingData = [];
-          for (const data of offlineData) {
-            try {
-              const photoFile = await dataURItoFile(data.photo, 'offline_photo.jpeg');
-              const result = await submitOccurrence({ ...data, photo: photoFile });
-              if (!result.success) {
-                allSucceeded = false;
-                remainingData.push(data);
-              }
-            } catch (error) {
-              allSucceeded = false;
-              remainingData.push(data);
-              console.error("Erro ao sincronizar:", error);
-            }
-          }
-  
-          if (allSucceeded) {
-            localStorage.removeItem('offlineOccurrences');
-            toast({
-              title: "Sincronização Completa!",
-              description: `${offlineData.length} ocorrência(s) pendente(s) foi/foram enviada(s).`,
-            });
-          } else {
-            localStorage.setItem('offlineOccurrences', JSON.stringify(remainingData));
-            toast({
-              variant: "destructive",
-              title: "Falha na Sincronização",
-              description: "Alguns dados não puderam ser enviados. Tente novamente mais tarde.",
-            });
-          }
-        });
-      }
-    };
-  
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-  
-    // Initial state
-    if (typeof navigator !== 'undefined') {
-      setIsOffline(!navigator.onLine);
-      if (navigator.onLine) {
-        syncOfflineData();
-      }
-    }
-  
+    setIsOffline(!navigator.onLine);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [toast]);
+  }, []);
+  
   
   useEffect(() => {
-    if (step === 'scan') {
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-        .then(stream => {
+    if (step === 'scan' && hasCameraPermission !== false) {
+      const startScanner = async () => {
+        try {
+          // Check for camera permission first
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
           }
           setHasCameraPermission(true);
 
-          const startScanner = async () => {
-            if (videoRef.current) {
-              try {
-                const zxing = await import('@zxing/browser');
-                const { BrowserQRCodeReader } = zxing;
-                const codeReader = new BrowserQRCodeReader();
-                
-                scannerControlsRef.current = await codeReader.decodeFromVideoElement(videoRef.current, (result, error, ctrls) => {
-                  if (result) {
-                    ctrls.stop();
-                    scannerControlsRef.current = null;
-                    form.setValue('scannedCode', result.getText());
-                    setStep('form');
-                  }
-                  if (error && error.name !== 'NotFoundException') {
-                     toast({
-                        variant: "destructive",
-                        title: "Erro de Scanner",
-                        description: `Ocorreu um erro: ${error.message}`,
-                    });
-                  }
-                });
-              } catch (err) {
+          // Dynamically import zxing
+          const zxing = await import('@zxing/browser');
+          const codeReader = new zxing.BrowserQRCodeReader();
+          
+          if (videoRef.current) {
+            scannerControlsRef.current = codeReader.decodeFromVideoElement(videoRef.current, (result, error, controls) => {
+              if (result) {
+                controls.stop();
+                scannerControlsRef.current = null;
+                setScannedCode(result.getText());
+                setStep('form');
+              }
+              if (error && !(error instanceof zxing.NotFoundException)) {
                  toast({
                     variant: "destructive",
                     title: "Erro de Scanner",
-                    description: `Não foi possível iniciar o leitor.`,
+                    description: `Ocorreu um erro: ${error.message}`,
                 });
               }
-            }
+            });
           }
-          startScanner();
-        })
-        .catch(err => {
-          console.error("Failed to get camera permission:", err);
-          setHasCameraPermission(false);
-          toast({
-            variant: "destructive",
-            title: "Câmera não autorizada",
-            description: "Você precisa permitir o acesso à câmera para continuar.",
-          });
-        });
+        } catch (err) {
+            console.error("Failed to start scanner:", err);
+            setHasCameraPermission(false);
+            toast({
+                variant: "destructive",
+                title: "Câmera não autorizada",
+                description: "Você precisa permitir o acesso à câmera para continuar.",
+            });
+        }
+      };
+      startScanner();
     }
+    
+    // Cleanup function
     return () => {
-      scannerControlsRef.current?.stop();
+        scannerControlsRef.current?.stop();
+        scannerControlsRef.current = null;
     };
-  }, [step, toast, form]);
+  }, [step, hasCameraPermission, toast]);
 
-  const occurrenceValue = form.watch('occurrence');
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -253,26 +194,34 @@ export function ScanForm() {
     }
   };
 
-  const saveForOffline = async (values: z.infer<typeof formSchema>) => {
-    if (typeof window.localStorage === 'undefined') return;
-    const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
+  const saveToLocal = async (values: z.infer<typeof formSchema>) => {
+    if (typeof window.localStorage === 'undefined' || !scannedCode) return;
     
-    let photoDataUrl = values.photo;
-    if (values.photo instanceof File) {
-      photoDataUrl = await new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(values.photo as File);
-      });
+    // Save for offline sync
+    if(isOffline){
+        const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
+        let photoDataUrl = values.photo;
+        if (values.photo instanceof File) {
+            photoDataUrl = await new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(values.photo as File);
+            });
+        }
+        offlineData.push({ ...values, scannedCode, photo: photoDataUrl, timestamp: new Date().toISOString() });
+        localStorage.setItem('offlineOccurrences', JSON.stringify(offlineData));
     }
 
-    offlineData.push({ ...values, photo: photoDataUrl });
-    localStorage.setItem('offlineOccurrences', JSON.stringify(offlineData));
-
+    // Save for local display
+    const localOccurrences = JSON.parse(localStorage.getItem('occurrences') || '[]');
+    localOccurrences.push({ ...values, scannedCode, timestamp: new Date().toISOString() });
+    localStorage.setItem('occurrences', JSON.stringify(localOccurrences));
+    
     toast({
-      title: "Salvo para envio posterior",
-      description: "A ocorrência foi salva e será enviada quando houver conexão.",
+      title: isOffline ? "Salvo para envio posterior" : "Ocorrência registrada localmente!",
+      description: isOffline ? "A ocorrência será enviada quando houver conexão." : "Visível na tela inicial.",
     });
+
     form.reset();
     setImagePreview(null);
     router.push('/');
@@ -280,49 +229,15 @@ export function ScanForm() {
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
     startTransition(async () => {
-      if (isOffline) {
-        await saveForOffline(values);
-        return;
+      if (!scannedCode) {
+         toast({ variant: "destructive", title: "Erro", description: "Código não escaneado." });
+         return;
       }
-      try {
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          if (!navigator.geolocation) {
-            reject(new Error("Geolocalização não é suportada por este navegador."));
-          }
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: 10000,
-          });
-        });
-        
-        const { latitude, longitude } = position.coords;
-        let photoFile: File;
-        if(typeof values.photo === 'string') {
-            photoFile = await dataURItoFile(values.photo, "photo.jpg");
-        } else {
-            photoFile = values.photo;
-        }
 
-        const result = await submitOccurrence({ ...values, photo: photoFile, latitude, longitude });
+      await saveToLocal(values);
 
-        if (result.success) {
-          toast({
-            title: "Sucesso!",
-            description: result.message,
-          });
-          form.reset();
-          setImagePreview(null);
-          router.push('/');
-        } else {
-          throw new Error(result.message || "Ocorreu um erro desconhecido.");
-        }
-      } catch (error: any) {
-        toast({
-          variant: "destructive",
-          title: "Erro ao registrar ocorrência",
-          description: error.message || "Não foi possível obter a localização ou enviar os dados.",
-        });
-      }
+      // We are not submitting to a real API, so we just save locally.
+      // If we were, the logic would be here, handling online/offline cases.
     });
   };
 
@@ -391,7 +306,7 @@ export function ScanForm() {
           <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FF914D' }}>K</span>
         </div>
       </header>
-      <div className="flex-1 flex flex-col items-center justify-start gap-4 p-4 md:gap-8 md:p-10 w-full">
+      <main className="flex-1 flex flex-col items-center justify-start gap-4 p-4 md:gap-8 md:p-10 w-full mb-24">
         <div className="w-full max-w-2xl">
           <Card className="w-full shadow-lg">
             <CardHeader>
@@ -399,27 +314,14 @@ export function ScanForm() {
                 <CardTitle>Registrar Ocorrência</CardTitle>
                 {isOffline && <WifiOff className="h-5 w-5 text-destructive" />}
               </div>
-              <CardDescription>Preencha os dados da ocorrência e anexe uma foto.</CardDescription>
+              <CardDescription>
+                Código: <span className="font-bold text-foreground">{scannedCode}</span>
+              </CardDescription>
             </CardHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)}>
                 <CardContent className="space-y-6">
-                  <FormField
-                    control={form.control}
-                    name="scannedCode"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Código de Barras / CTE</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                            <Input placeholder="Leia ou digite o código" {...field} className="pl-10" />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  
                   <FormField
                     control={form.control}
                     name="occurrence"
@@ -439,6 +341,7 @@ export function ScanForm() {
                             <SelectItem value="extravio">Extravio</SelectItem>
                             <SelectItem value="devolucao">Devolução</SelectItem>
                             <SelectItem value="recusado">Recusado pelo destinatário</SelectItem>
+                             <SelectItem value="feriado">Feriado / Fim de Semana</SelectItem>
                             <SelectItem value="outros">Outros</SelectItem>
                           </SelectContent>
                         </Select>
@@ -447,7 +350,7 @@ export function ScanForm() {
                     )}
                   />
 
-                  {occurrenceValue === 'entregue' && (
+                  {isDelivered && (
                     <div className="space-y-6 rounded-md border bg-secondary/30 p-4 animate-in fade-in-50">
                       <p className="text-sm font-medium text-foreground">Dados do Recebedor</p>
                       <FormField
@@ -490,60 +393,59 @@ export function ScanForm() {
                     name="photo"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Foto da Ocorrência</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Button asChild variant="outline" className="w-full">
-                              <label htmlFor="photo-upload" className="cursor-pointer">
-                                <Camera className="mr-2 h-5 w-5" />
-                                Tirar Foto
-                              </label>
-                            </Button>
-                            <Input 
-                              id="photo-upload"
-                              type="file" 
-                              className="sr-only" 
-                              accept="image/*" 
-                              capture="environment"
-                              onChange={handleFileChange}
-                            />
-                          </div>
-                        </FormControl>
-                        <FormDescription>
-                          Anexe uma foto clara do comprovante ou da avaria.
-                        </FormDescription>
+                        {imagePreview && (
+                            <div className="relative w-full max-w-sm mx-auto aspect-video overflow-hidden rounded-lg border">
+                            <Image src={imagePreview} alt="Pré-visualização da foto" layout="fill" objectFit="contain" />
+                            </div>
+                        )}
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-
-                  {imagePreview && (
-                    <div className="relative w-full max-w-sm mx-auto aspect-video overflow-hidden rounded-lg border">
-                      <Image src={imagePreview} alt="Pré-visualização da foto" layout="fill" objectFit="contain" />
-                    </div>
-                  )}
+                  <Input 
+                    id="photo-upload"
+                    type="file" 
+                    className="sr-only" 
+                    accept="image/*" 
+                    capture="environment"
+                    onChange={handleFileChange}
+                    />
 
                 </CardContent>
-                <CardFooter>
-                  <Button type="submit" disabled={isPending} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
-                    {isPending ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Enviando...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="mr-2 h-4 w-4" />
-                        Enviar Ocorrência
-                      </>
-                    )}
-                  </Button>
-                </CardFooter>
+                {/* Footer is now external */}
               </form>
             </Form>
           </Card>
         </div>
-      </div>
+      </main>
+      <footer className="fixed bottom-0 z-10 flex w-full justify-center items-center gap-4 bg-background border-t p-4">
+        <Button 
+            asChild
+            variant="outline" 
+            className="h-16 w-16 rounded-full shadow-lg"
+            disabled={!isCameraEnabled}
+            aria-label="Tirar Foto"
+        >
+            <label htmlFor="photo-upload" className={`cursor-${isCameraEnabled ? 'pointer' : 'not-allowed'}`}>
+                <Camera className="h-8 w-8" />
+            </label>
+        </Button>
+       
+        <Button
+            type="submit"
+            variant="default"
+            className="h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90 text-accent-foreground"
+            disabled={!isSendEnabled || isPending}
+            onClick={form.handleSubmit(onSubmit)}
+            aria-label="Enviar Ocorrência"
+        >
+            {isPending ? (
+                <Loader2 className="h-8 w-8 animate-spin" />
+            ) : (
+                <Send className="h-8 w-8" />
+            )}
+        </Button>
+      </footer>
     </>
   );
 }

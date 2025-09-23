@@ -1,15 +1,18 @@
+
 import { z } from 'zod';
 
+// This schema is for client-side validation with react-hook-form
 export const OccurrenceFormSchema = z.object({
-  scannedCode: z.string(),
   occurrence: z.string(),
-  photo: z.any(), // Can be File or string (data URI)
+  photo: z.any().optional(),
   receiverName: z.string().optional(),
   receiverDocument: z.string().optional(),
-  latitude: z.number(),
-  longitude: z.number(),
 });
 
-export type OccurrenceFormData = z.infer<typeof OccurrenceFormSchema>;
 
-    
+// This type is for the actual data submission (e.g., to a server action)
+export type OccurrenceFormData = z.infer<typeof OccurrenceFormSchema> & {
+    photo?: File;
+    latitude?: number;
+    longitude?: number;
+};
