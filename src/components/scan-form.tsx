@@ -182,7 +182,6 @@ export function ScanForm() {
   }, [toast]);
   
   useEffect(() => {
-    let controls: IScannerControls | null = null;
     if (step === 'scan') {
       navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
         .then(stream => {
@@ -198,13 +197,14 @@ export function ScanForm() {
                 const { BrowserQRCodeReader } = zxing;
                 const codeReader = new BrowserQRCodeReader();
                 
-                controls = await codeReader.decodeFromVideoElement(videoRef.current, (result, error, ctrls) => {
+                scannerControlsRef.current = await codeReader.decodeFromVideoElement(videoRef.current, (result, error, ctrls) => {
                   if (result) {
                     ctrls.stop();
+                    scannerControlsRef.current = null;
                     form.setValue('scannedCode', result.getText());
                     setStep('form');
                   }
-                  if (error && !(error instanceof zxing.NotFoundException)) {
+                  if (error && error.name !== 'NotFoundException') {
                      toast({
                         variant: "destructive",
                         title: "Erro de Scanner",
@@ -234,7 +234,7 @@ export function ScanForm() {
         });
     }
     return () => {
-      controls?.stop();
+      scannerControlsRef.current?.stop();
     };
   }, [step, toast, form]);
 
@@ -322,8 +322,6 @@ export function ScanForm() {
           title: "Erro ao registrar ocorrência",
           description: error.message || "Não foi possível obter a localização ou enviar os dados.",
         });
-        // Don't save offline if geolocation fails, as lat/lng are required
-        // await saveForOffline(values);
       }
     });
   };
@@ -381,154 +379,171 @@ export function ScanForm() {
   }
 
   return (
-    <Card className="w-full shadow-lg">
-      <CardHeader>
-        <div className="flex justify-between items-center">
-           <CardTitle>Registrar Ocorrência</CardTitle>
-           {isOffline && <WifiOff className="h-5 w-5 text-destructive" />}
+    <>
+      <header className="sticky top-0 z-10 flex h-20 items-center justify-center gap-4 border-b bg-primary px-4 shadow-sm md:px-6 w-full">
+        <div style={{
+          fontSize: '32px',
+          fontWeight: 'bold',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          letterSpacing: '1px',
+          textAlign: 'center'
+        }}>
+          <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FF914D' }}>K</span>
         </div>
-        <CardDescription>Preencha os dados da ocorrência e anexe uma foto.</CardDescription>
-      </CardHeader>
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)}>
-          <CardContent className="space-y-6">
-            <FormField
-              control={form.control}
-              name="scannedCode"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Código de Barras / CTE</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                      <Input placeholder="Leia ou digite o código" {...field} className="pl-10" />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="occurrence"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Ocorrência</FormLabel>
-                   <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                         <Package className="mr-2 h-5 w-5 text-muted-foreground" />
-                        <SelectValue placeholder="Selecione o tipo de ocorrência" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="entregue">Entregue</SelectItem>
-                      <SelectItem value="avaria">Avaria</SelectItem>
-                      <SelectItem value="extravio">Extravio</SelectItem>
-                      <SelectItem value="devolucao">Devolução</SelectItem>
-                      <SelectItem value="recusado">Recusado pelo destinatário</SelectItem>
-                      <SelectItem value="outros">Outros</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {occurrenceValue === 'entregue' && (
-              <div className="space-y-6 rounded-md border bg-secondary/30 p-4 animate-in fade-in-50">
-                <p className="text-sm font-medium text-foreground">Dados do Recebedor</p>
-                 <FormField
-                  control={form.control}
-                  name="receiverName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nome do Recebedor</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                          <Input placeholder="Nome de quem recebeu" {...field} className="pl-10" />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                 <FormField
-                  control={form.control}
-                  name="receiverDocument"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Documento do Recebedor (RG/CPF)</FormLabel>
-                      <FormControl>
-                         <div className="relative">
-                           <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                           <Input placeholder="Documento de quem recebeu" {...field} className="pl-10"/>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+      </header>
+      <div className="flex-1 flex flex-col items-center justify-start gap-4 p-4 md:gap-8 md:p-10 w-full">
+        <div className="w-full max-w-2xl">
+          <Card className="w-full shadow-lg">
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Registrar Ocorrência</CardTitle>
+                {isOffline && <WifiOff className="h-5 w-5 text-destructive" />}
               </div>
-            )}
-            
-            <FormField
-              control={form.control}
-              name="photo"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Foto da Ocorrência</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Button asChild variant="outline" className="w-full">
-                        <label htmlFor="photo-upload" className="cursor-pointer">
-                          <Camera className="mr-2 h-5 w-5" />
-                          Tirar Foto
-                        </label>
-                      </Button>
-                      <Input 
-                        id="photo-upload"
-                        type="file" 
-                        className="sr-only" 
-                        accept="image/*" 
-                        capture="environment"
-                        onChange={handleFileChange}
+              <CardDescription>Preencha os dados da ocorrência e anexe uma foto.</CardDescription>
+            </CardHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)}>
+                <CardContent className="space-y-6">
+                  <FormField
+                    control={form.control}
+                    name="scannedCode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Código de Barras / CTE</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                            <Input placeholder="Leia ou digite o código" {...field} className="pl-10" />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="occurrence"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Ocorrência</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <Package className="mr-2 h-5 w-5 text-muted-foreground" />
+                              <SelectValue placeholder="Selecione o tipo de ocorrência" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="entregue">Entregue</SelectItem>
+                            <SelectItem value="avaria">Avaria</SelectItem>
+                            <SelectItem value="extravio">Extravio</SelectItem>
+                            <SelectItem value="devolucao">Devolução</SelectItem>
+                            <SelectItem value="recusado">Recusado pelo destinatário</SelectItem>
+                            <SelectItem value="outros">Outros</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {occurrenceValue === 'entregue' && (
+                    <div className="space-y-6 rounded-md border bg-secondary/30 p-4 animate-in fade-in-50">
+                      <p className="text-sm font-medium text-foreground">Dados do Recebedor</p>
+                      <FormField
+                        control={form.control}
+                        name="receiverName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Nome do Recebedor</FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                                <Input placeholder="Nome de quem recebeu" {...field} className="pl-10" />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="receiverDocument"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Documento do Recebedor (RG/CPF)</FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                                <Input placeholder="Documento de quem recebeu" {...field} className="pl-10"/>
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
                     </div>
-                  </FormControl>
-                  <FormDescription>
-                    Anexe uma foto clara do comprovante ou da avaria.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                  )}
+                  
+                  <FormField
+                    control={form.control}
+                    name="photo"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Foto da Ocorrência</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Button asChild variant="outline" className="w-full">
+                              <label htmlFor="photo-upload" className="cursor-pointer">
+                                <Camera className="mr-2 h-5 w-5" />
+                                Tirar Foto
+                              </label>
+                            </Button>
+                            <Input 
+                              id="photo-upload"
+                              type="file" 
+                              className="sr-only" 
+                              accept="image/*" 
+                              capture="environment"
+                              onChange={handleFileChange}
+                            />
+                          </div>
+                        </FormControl>
+                        <FormDescription>
+                          Anexe uma foto clara do comprovante ou da avaria.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-            {imagePreview && (
-              <div className="relative w-full max-w-sm mx-auto aspect-video overflow-hidden rounded-lg border">
-                <Image src={imagePreview} alt="Pré-visualização da foto" layout="fill" objectFit="contain" />
-              </div>
-            )}
+                  {imagePreview && (
+                    <div className="relative w-full max-w-sm mx-auto aspect-video overflow-hidden rounded-lg border">
+                      <Image src={imagePreview} alt="Pré-visualização da foto" layout="fill" objectFit="contain" />
+                    </div>
+                  )}
 
-          </CardContent>
-          <CardFooter>
-            <Button type="submit" disabled={isPending} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
-              {isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Enviando...
-                </>
-              ) : (
-                <>
-                  <Send className="mr-2 h-4 w-4" />
-                  Enviar Ocorrência
-                </>
-              )}
-            </Button>
-          </CardFooter>
-        </form>
-      </Form>
-    </Card>
+                </CardContent>
+                <CardFooter>
+                  <Button type="submit" disabled={isPending} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
+                    {isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="mr-2 h-4 w-4" />
+                        Enviar Ocorrência
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </form>
+            </Form>
+          </Card>
+        </div>
+      </div>
+    </>
   );
 }
