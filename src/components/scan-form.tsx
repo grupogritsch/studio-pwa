@@ -129,7 +129,6 @@ export function ScanForm() {
   }, []);
   
   
-  // Get camera permission
   useEffect(() => {
     if (step !== 'scan') {
       return;
@@ -157,7 +156,6 @@ export function ScanForm() {
 
     getCameraPermission();
 
-    // Cleanup: stop video tracks when component unmounts or step changes
     return () => {
       if (scannerControlsRef.current) {
         scannerControlsRef.current.stop();
@@ -171,7 +169,6 @@ export function ScanForm() {
     };
   }, [step, toast]);
 
-  // Start scanner once permission is granted
   useEffect(() => {
     if (step !== 'scan' || hasCameraPermission !== true || !videoRef.current) {
       return;
@@ -231,7 +228,6 @@ export function ScanForm() {
         timestamp: new Date().toISOString() 
     };
 
-    // Save for offline sync
     if(isOffline){
         const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
         let photoDataUrl = values.photo;
@@ -246,7 +242,6 @@ export function ScanForm() {
         localStorage.setItem('offlineOccurrences', JSON.stringify(offlineData));
     }
 
-    // Save for local display
     const localOccurrences = JSON.parse(localStorage.getItem('occurrences') || '[]');
     localOccurrences.push(occurrenceData);
     localStorage.setItem('occurrences', JSON.stringify(localOccurrences));
@@ -269,9 +264,6 @@ export function ScanForm() {
       }
 
       await saveToLocal(values);
-
-      // We are not submitting to a real API, so we just save locally.
-      // If we were, the logic would be here, handling online/offline cases.
     });
   };
 
@@ -333,18 +325,18 @@ export function ScanForm() {
       </header>
       <main className="flex-1 flex flex-col items-center justify-start gap-4 p-4 md:gap-8 md:p-10 w-full mb-24">
         <div className="w-full max-w-2xl">
-          <Card className="w-full shadow-lg">
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle>Registrar Ocorrência</CardTitle>
-                {isOffline && <WifiOff className="h-5 w-5 text-destructive" />}
-              </div>
-              <CardDescription>
-                Código: <span className="font-bold text-foreground">{scannedCode}</span>
-              </CardDescription>
-            </CardHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)}>
+        <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)}>
+              <Card className="w-full shadow-lg">
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <CardTitle>Registrar Ocorrência</CardTitle>
+                    {isOffline && <WifiOff className="h-5 w-5 text-destructive" />}
+                  </div>
+                  <CardDescription>
+                    Código: <span className="font-bold text-foreground">{scannedCode}</span>
+                  </CardDescription>
+                </CardHeader>
                 <CardContent className="space-y-6">
                   
                   <FormField
@@ -437,40 +429,40 @@ export function ScanForm() {
                     />
 
                 </CardContent>
-                {/* Footer is now external */}
-              </form>
-            </Form>
-          </Card>
+                <CardFooter className="flex justify-center items-center gap-4 border-t p-4">
+                  <Button 
+                      asChild
+                      variant="outline" 
+                      className="h-16 w-16 rounded-full shadow-lg"
+                      disabled={!isCameraEnabled}
+                      aria-label="Tirar Foto"
+                  >
+                      <label htmlFor="photo-upload" className={`cursor-${isCameraEnabled ? 'pointer' : 'not-allowed'}`}>
+                          <Camera className="h-8 w-8" />
+                      </label>
+                  </Button>
+                
+                  <Button
+                      type="submit"
+                      variant="default"
+                      className="h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90 text-accent-foreground"
+                      disabled={!isSendEnabled || isPending}
+                      aria-label="Enviar Ocorrência"
+                  >
+                      {isPending ? (
+                          <Loader2 className="h-8 w-8 animate-spin" />
+                      ) : (
+                          <Send className="h-8 w-8" />
+                      )}
+                  </Button>
+                </CardFooter>
+              </Card>
+            </form>
+          </Form>
         </div>
       </main>
-      <footer className="fixed bottom-0 z-10 flex w-full justify-center items-center gap-4 bg-background border-t p-4">
-        <Button 
-            asChild
-            variant="outline" 
-            className="h-16 w-16 rounded-full shadow-lg"
-            disabled={!isCameraEnabled}
-            aria-label="Tirar Foto"
-        >
-            <label htmlFor="photo-upload" className={`cursor-${isCameraEnabled ? 'pointer' : 'not-allowed'}`}>
-                <Camera className="h-8 w-8" />
-            </label>
-        </Button>
-       
-        <Button
-            type="submit"
-            variant="default"
-            className="h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90 text-accent-foreground"
-            disabled={!isSendEnabled || isPending}
-            onClick={form.handleSubmit(onSubmit)}
-            aria-label="Enviar Ocorrência"
-        >
-            {isPending ? (
-                <Loader2 className="h-8 w-8 animate-spin" />
-            ) : (
-                <Send className="h-8 w-8" />
-            )}
-        </Button>
-      </footer>
     </>
     );
 }
+
+    
