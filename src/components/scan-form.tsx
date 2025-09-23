@@ -106,6 +106,7 @@ export function ScanForm() {
             const zxing = await import('@zxing/browser');
             const { NotFoundException } = zxing;
             const codeReader = new zxing.BrowserQRCodeReader();
+            
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
             
             setHasCameraPermission(true);
@@ -124,7 +125,6 @@ export function ScanForm() {
                     }
                     if (error && !(error instanceof NotFoundException)) {
                         console.error('ZXing error:', error);
-                        // Não pare o scanner em erros que não sejam de código não encontrado
                     }
                 });
             }
@@ -500,5 +500,3 @@ export function ScanForm() {
     </Card>
   );
 }
-
-    
