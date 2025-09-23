@@ -129,63 +129,65 @@ export function ScanForm() {
   
   
 useEffect(() => {
-    let controls: IScannerControls | null = null;
-
     const startScanner = async () => {
-        if (step !== 'scan' || hasCameraPermission === false) {
-            return;
-        }
+      if (step !== 'scan' || hasCameraPermission === false) {
+        return;
+      }
 
-        try {
-            const { BrowserQRCodeReader, NotFoundException } = await import('@zxing/browser');
-            const codeReader = new BrowserQRCodeReader();
+      try {
+        const { BrowserQRCodeReader, NotFoundException } = await import('@zxing/browser');
+        const codeReader = new BrowserQRCodeReader();
 
-            if (videoRef.current) {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                videoRef.current.srcObject = stream;
-                setHasCameraPermission(true);
+        // Get camera permission first
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        setHasCameraPermission(true);
 
-                codeReader.decodeFromVideoElement(videoRef.current, (result, error, videoControls) => {
-                    if (videoControls && !controls) {
-                        controls = videoControls;
-                        scannerControlsRef.current = videoControls;
-                    }
-                    if (result) {
-                        videoControls.stop();
-                        scannerControlsRef.current = null;
-                        setScannedCode(result.getText());
-                        setStep('form');
-                    }
-                    if (error && !(error instanceof NotFoundException)) {
-                        console.error("Scanner Error:", error);
-                        toast({
-                            variant: "destructive",
-                            title: "Erro de Scanner",
-                            description: "Ocorreu um erro ao tentar ler o código.",
-                        });
-                    }
-                });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+
+          // Now start decoding
+          codeReader.decodeFromVideoElement(videoRef.current, (result, error, controls) => {
+            if (controls && !scannerControlsRef.current) {
+              scannerControlsRef.current = controls;
             }
-        } catch (err) {
-            console.error("Failed to get camera permission or start scanner:", err);
-            setHasCameraPermission(false);
-            toast({
+            if (result) {
+              scannerControlsRef.current?.stop();
+              scannerControlsRef.current = null;
+              setScannedCode(result.getText());
+              setStep('form');
+            }
+            if (error && !(error instanceof NotFoundException)) {
+              console.error("Scanner Error:", error);
+              toast({
                 variant: "destructive",
-                title: "Câmera não autorizada",
-                description: "Você precisa permitir o acesso à câmera para continuar.",
-            });
+                title: "Erro de Scanner",
+                description: "Ocorreu um erro ao tentar ler o código.",
+              });
+            }
+          });
         }
+      } catch (err) {
+        console.error("Failed to get camera permission or start scanner:", err);
+        setHasCameraPermission(false);
+        toast({
+          variant: "destructive",
+          title: "Câmera não autorizada",
+          description: "Você precisa permitir o acesso à câmera para continuar.",
+        });
+      }
     };
 
-    startScanner();
+    if (step === 'scan') {
+        startScanner();
+    }
 
     return () => {
-        if (scannerControlsRef.current) {
-            scannerControlsRef.current.stop();
-            scannerControlsRef.current = null;
-        }
+      if (scannerControlsRef.current) {
+        scannerControlsRef.current.stop();
+        scannerControlsRef.current = null;
+      }
     };
-}, [step, hasCameraPermission, toast]);
+  }, [step, hasCameraPermission, toast]);
 
 
   
