@@ -3,13 +3,18 @@
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 
 export default function Home() {
   const router = useRouter();
 
   const handleNewOccurrence = () => {
     router.push('/ocorrencia');
+  };
+
+  const handleFinish = () => {
+    // Lógica para finalizar será adicionada aqui
+    console.log("Botão Finalizar clicado");
   };
 
   return (
@@ -30,7 +35,7 @@ export default function Home() {
           Nenhuma ocorrência registrada ainda.
         </h2>
       </main>
-      <footer className="sticky bottom-0 z-10 flex justify-center bg-transparent p-4">
+      <footer className="sticky bottom-0 z-10 flex justify-center items-center gap-4 bg-transparent p-4">
         <Button
           variant="default"
           size="icon"
@@ -39,6 +44,15 @@ export default function Home() {
           aria-label="Nova Ocorrência"
         >
           <Plus className="h-10 w-10" />
+        </Button>
+        <Button
+          variant="secondary"
+          size="icon"
+          className="h-16 w-16 rounded-full shadow-lg"
+          onClick={handleFinish}
+          aria-label="Finalizar"
+        >
+          <Check className="h-10 w-10" />
         </Button>
       </footer>
     </div>
