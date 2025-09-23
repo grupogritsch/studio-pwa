@@ -116,9 +116,16 @@ export function ScanForm() {
 
     const startScanner = async () => {
       if (isScannerOpen && Zxing && videoRef.current) {
+        setIsRequestingPermission(true);
         try {
+          const videoConstraints: MediaStreamConstraints = {
+            video: {
+              facingMode: 'environment' 
+            }
+          };
+
           // Request permission and get stream
-          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          stream = await navigator.mediaDevices.getUserMedia(videoConstraints);
           setHasCameraPermission(true);
 
           if (videoRef.current) {
@@ -126,7 +133,7 @@ export function ScanForm() {
           }
 
           codeReader = new Zxing.BrowserQRCodeReader();
-          codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, err) => {
+          codeReader.decodeFromStream(stream, videoRef.current, (result, err) => {
             if (result) {
               form.setValue('scannedCode', result.getText());
               setScannerOpen(false);
@@ -154,6 +161,8 @@ export function ScanForm() {
             title: 'Acesso à Câmera Negado',
             description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
           });
+        } finally {
+          setIsRequestingPermission(false);
         }
       }
     };
@@ -490,17 +499,11 @@ export function ScanForm() {
       </Card>
 
       <Dialog open={isScannerOpen} onOpenChange={setScannerOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Escanear Código</DialogTitle>
-            <DialogDescription>
-              Aponte a câmera para o código de barras ou QR code.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="relative">
-             <video ref={videoRef} className="w-full aspect-video rounded-md bg-black" autoPlay playsInline />
+        <DialogContent className="max-w-full w-full h-full max-h-screen p-0 m-0">
+          <div className="relative w-full h-full">
+             <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline />
              {hasCameraPermission === false && (
-               <div className="absolute inset-0 flex items-center justify-center bg-black/80 rounded-md">
+               <div className="absolute inset-0 flex items-center justify-center bg-black/80">
                 <Alert variant="destructive" className="max-w-sm">
                   <AlertTitle>Acesso à Câmera Negado</AlertTitle>
                   <AlertDescription>
@@ -510,7 +513,7 @@ export function ScanForm() {
                </div>
              )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
             <DialogClose asChild>
               <Button type="button" variant="secondary">
                 Cancelar
@@ -522,3 +525,5 @@ export function ScanForm() {
     </>
   );
 }
+
+    
