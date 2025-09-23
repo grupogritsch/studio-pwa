@@ -128,9 +128,11 @@ export function ScanForm() {
   }, []);
   
   
-  useEffect(() => {
+useEffect(() => {
+    let controls: IScannerControls | null = null;
+
     const startScanner = async () => {
-        if (step !== 'scan' || hasCameraPermission === false || scannerControlsRef.current) {
+        if (step !== 'scan' || hasCameraPermission === false) {
             return;
         }
 
@@ -143,9 +145,13 @@ export function ScanForm() {
                 videoRef.current.srcObject = stream;
                 setHasCameraPermission(true);
 
-                scannerControlsRef.current = codeReader.decodeFromVideoElement(videoRef.current, (result, error, controls) => {
+                codeReader.decodeFromVideoElement(videoRef.current, (result, error, videoControls) => {
+                    if (videoControls && !controls) {
+                        controls = videoControls;
+                        scannerControlsRef.current = videoControls;
+                    }
                     if (result) {
-                        controls.stop();
+                        videoControls.stop();
                         scannerControlsRef.current = null;
                         setScannedCode(result.getText());
                         setStep('form');
@@ -174,8 +180,10 @@ export function ScanForm() {
     startScanner();
 
     return () => {
-        scannerControlsRef.current?.stop();
-        scannerControlsRef.current = null;
+        if (scannerControlsRef.current) {
+            scannerControlsRef.current.stop();
+            scannerControlsRef.current = null;
+        }
     };
 }, [step, hasCameraPermission, toast]);
 
@@ -455,5 +463,3 @@ export function ScanForm() {
     </>
   );
 }
-
-    
