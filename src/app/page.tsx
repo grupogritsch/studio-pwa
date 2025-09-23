@@ -46,9 +46,9 @@ export default function Home() {
           <Plus className="h-10 w-10" />
         </Button>
         <Button
-          variant="secondary"
+          variant="default"
           size="icon"
-          className="h-16 w-16 rounded-full shadow-lg"
+          className="h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90"
           onClick={handleFinish}
           aria-label="Finalizar"
         >
