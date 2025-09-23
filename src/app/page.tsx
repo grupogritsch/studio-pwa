@@ -3,7 +3,6 @@
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { PlusCircle } from 'lucide-react';
 
 export default function Home() {
   const router = useRouter();
@@ -22,24 +21,23 @@ export default function Home() {
           letterSpacing: '1px',
           textAlign: 'center'
         }}>
-          <span style={{ color: '#ffffff' }}>LOGISTI</span><span style={{ color: '#FF914D' }}>K</span>
+          <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FF914D' }}>K</span>
         </div>
       </header>
-      <main className="flex flex-1 flex-col items-center justify-center gap-8 p-4 md:gap-8 md:p-10">
-        <div className="text-center">
-          <h2 className="text-xl text-muted-foreground mb-8">
-            Nenhuma ocorrência registrada ainda.
-          </h2>
-          <Button
-            size="lg"
-            className="h-16 text-lg"
-            onClick={handleNewOccurrence}
-          >
-            <PlusCircle className="mr-3 h-6 w-6" />
-            Nova Ocorrência
-          </Button>
-        </div>
+      <main className="flex flex-1 flex-col items-center justify-center p-4 text-center">
+        <h2 className="text-xl text-muted-foreground">
+          Nenhuma ocorrência registrada ainda.
+        </h2>
       </main>
+      <footer className="sticky bottom-0 z-10 border-t bg-secondary/50 p-4 backdrop-blur-sm">
+        <Button
+          size="lg"
+          className="h-14 w-full text-lg"
+          onClick={handleNewOccurrence}
+        >
+          Nova Ocorrência
+        </Button>
+      </footer>
     </div>
   );
 }
