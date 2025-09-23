@@ -100,6 +100,75 @@ export function ScanForm() {
     return new File([blob], fileName, { type: blob.type });
   };
   
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      toast({
+        title: "Conexão reestabelecida!",
+        description: "Sincronizando dados pendentes...",
+      });
+      syncOfflineData();
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      toast({
+        variant: "destructive",
+        title: "Você está offline",
+        description: "Os dados serão salvos localmente e enviados quando a conexão voltar.",
+      });
+    };
+
+    const syncOfflineData = () => {
+      const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
+      if (offlineData.length > 0 && navigator.onLine) {
+        startTransition(async () => {
+          let allSucceeded = true;
+          for (const data of offlineData) {
+            try {
+              const photoFile = await dataURItoFile(data.photo, 'offline_photo.jpeg');
+              const result = await submitOccurrence({ ...data, photo: photoFile });
+              if (!result.success) {
+                allSucceeded = false;
+              }
+            } catch (error) {
+              allSucceeded = false;
+              console.error("Erro ao sincronizar:", error);
+            }
+          }
+          
+          if (allSucceeded) {
+            localStorage.removeItem('offlineOccurrences');
+            toast({
+              title: "Sincronização Completa!",
+              description: `${offlineData.length} ocorrência(s) pendente(s) foi/foram enviada(s).`,
+            });
+          } else {
+              toast({
+                  variant: "destructive",
+                  title: "Falha na Sincronização",
+                  description: "Alguns dados não puderam ser enviados. Tente novamente mais tarde.",
+              });
+          }
+        });
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial state
+    setIsOffline(!navigator.onLine);
+    if (navigator.onLine) {
+      syncOfflineData();
+    }
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  
   // Effect 1: Request camera permission
   useEffect(() => {
     if (step !== 'scan') {
@@ -130,8 +199,17 @@ export function ScanForm() {
     const startScanner = async () => {
         try {
             const zxing = await import('@zxing/browser');
-            const { BrowserMultiFormatReader } = zxing;
-            const codeReader = new BrowserMultiFormatReader();
+            const { BrowserMultiFormatReader, BarcodeFormat } = zxing;
+            const hints = new Map();
+            const formats = [
+                BarcodeFormat.QR_CODE, 
+                BarcodeFormat.CODE_128, 
+                BarcodeFormat.EAN_13,
+                BarcodeFormat.ITF,
+            ];
+            hints.set(zxing.DecodeHintType.POSSIBLE_FORMATS, formats);
+            
+            const codeReader = new BrowserMultiFormatReader(hints);
 
             if (!videoRef.current || !isMounted) return;
 
@@ -149,7 +227,7 @@ export function ScanForm() {
                         description: "Continue para preencher a ocorrência.",
                     });
                 }
-                 if (error && error.name !== 'NotFoundException') {
+                if (error && error.name !== 'NotFoundException') {
                     console.error('ZXing error:', error);
                 }
             });
@@ -171,78 +249,6 @@ export function ScanForm() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, hasCameraPermission]);
-
-  // Effect 3: Handle Offline/Online status and sync
-  useEffect(() => {
-      const syncOfflineData = () => {
-        const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
-        if (offlineData.length > 0 && navigator.onLine) {
-          startTransition(async () => {
-            let allSucceeded = true;
-            for (const data of offlineData) {
-              try {
-                const photoFile = await dataURItoFile(data.photo, 'offline_photo.jpeg');
-                const result = await submitOccurrence({ ...data, photo: photoFile });
-                if (!result.success) {
-                  allSucceeded = false;
-                }
-              } catch (error) {
-                allSucceeded = false;
-                console.error("Erro ao sincronizar:", error);
-              }
-            }
-            
-            if (allSucceeded) {
-              localStorage.removeItem('offlineOccurrences');
-              toast({
-                title: "Sincronização Completa!",
-                description: `${offlineData.length} ocorrência(s) pendente(s) foi/foram enviada(s).`,
-              });
-            } else {
-                toast({
-                    variant: "destructive",
-                    title: "Falha na Sincronização",
-                    description: "Alguns dados não puderam ser enviados. Tente novamente mais tarde.",
-                });
-            }
-          });
-        }
-      };
-
-    const handleOnline = () => {
-      setIsOffline(false);
-      toast({
-        title: "Conexão reestabelecida!",
-        description: "Sincronizando dados pendentes...",
-      });
-      syncOfflineData();
-    };
-    const handleOffline = () => {
-      setIsOffline(true);
-      toast({
-        variant: "destructive",
-        title: "Você está offline",
-        description: "Os dados serão salvos localmente e enviados quando a conexão voltar.",
-      });
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // Initial state
-    if (typeof window !== 'undefined') {
-        setIsOffline(!navigator.onLine);
-        if (navigator.onLine) {
-          syncOfflineData();
-        }
-    }
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const occurrenceValue = form.watch('occurrence');
   
@@ -528,3 +534,5 @@ export function ScanForm() {
     </Card>
   );
 }
+
+    
