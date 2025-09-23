@@ -37,7 +37,7 @@ import { useToast } from '@/hooks/use-toast';
 import { submitOccurrence } from '@/lib/actions';
 import { Camera, FileText, Loader2, Package, ScanLine, Send, User, WifiOff, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import type { IScannerControls } from '@zxing/browser';
+import { BrowserQRCodeReader, IScannerControls, NotFoundException } from '@zxing/browser';
 
 
 const formSchema = z.object({
@@ -128,95 +128,87 @@ export function ScanForm() {
   }, []);
   
   
+// Get camera permission
 useEffect(() => {
     if (step !== 'scan') {
       return;
     }
 
-    let zxing: typeof import('@zxing/browser');
-    const startScanner = async () => {
-      if (hasCameraPermission === false || !videoRef.current) {
-        return;
-      }
-
+    const getCameraPermission = async () => {
       try {
-        zxing = await import('@zxing/browser');
-        const codeReader = new zxing.BrowserQRCodeReader();
-
-        // Get camera permission first if not already granted
-        if (hasCameraPermission === null) {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-          setHasCameraPermission(true);
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        setHasCameraPermission(true);
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
         }
-
-        if (videoRef.current && hasCameraPermission) {
-          // Now start decoding
-          const controls = await codeReader.decodeFromVideoElement(videoRef.current, (result, error) => {
-            if (result) {
-              scannerControlsRef.current?.stop();
-              scannerControlsRef.current = null;
-              setScannedCode(result.getText());
-              setStep('form');
-            }
-            if (error && !(error instanceof zxing.NotFoundException)) {
-              console.error("Scanner Error:", error);
-              toast({
-                variant: "destructive",
-                title: "Erro de Scanner",
-                description: "Ocorreu um erro ao tentar ler o código.",
-              });
-            }
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+        setHasCameraPermission(false);
+        if ((error as Error).name === 'NotAllowedError') {
+          toast({
+            variant: 'destructive',
+            title: 'Acesso à Câmera Negado',
+            description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
           });
-          scannerControlsRef.current = controls;
-        }
-      } catch (err) {
-        console.error("Failed to get camera permission or start scanner:", err);
-        if((err as Error).name === 'NotAllowedError') {
-             setHasCameraPermission(false);
-            toast({
-                variant: "destructive",
-                title: "Câmera não autorizada",
-                description: "Você precisa permitir o acesso à câmera para continuar.",
-            });
         }
       }
     };
-    
-    // Request permission on component mount for the scan step
-    if(hasCameraPermission === null) {
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-            .then(stream => {
-                 if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                 }
-                setHasCameraPermission(true);
-            })
-            .catch(err => {
-                console.error("Camera permission denied:", err);
-                setHasCameraPermission(false);
-            })
-    }
-    
-    if (hasCameraPermission) {
-        startScanner();
-    }
 
+    getCameraPermission();
+
+    // Cleanup: stop video tracks when component unmounts or step changes
     return () => {
-      if (scannerControlsRef.current) {
-        scannerControlsRef.current.stop();
-        scannerControlsRef.current = null;
-      }
-       if (videoRef.current && videoRef.current.srcObject) {
+      if (videoRef.current && videoRef.current.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach(track => track.stop());
         videoRef.current.srcObject = null;
       }
     };
-  }, [step, hasCameraPermission, toast]);
+  }, [step, toast]);
 
+  // Start scanner once permission is granted
+  useEffect(() => {
+    if (step !== 'scan' || hasCameraPermission !== true || !videoRef.current) {
+      return;
+    }
+
+    const codeReader = new BrowserQRCodeReader();
+    const startScanner = async () => {
+        try {
+            if (videoRef.current) {
+                const controls = await codeReader.decodeFromVideoElement(videoRef.current, (result, error) => {
+                    if (result) {
+                        scannerControlsRef.current?.stop();
+                        scannerControlsRef.current = null;
+                        setScannedCode(result.getText());
+                        setStep('form');
+                    }
+                    if (error && !(error instanceof NotFoundException)) {
+                        console.error("Scanner Error:", error);
+                        toast({
+                            variant: "destructive",
+                            title: "Erro de Scanner",
+                            description: "Ocorreu um erro ao tentar ler o código.",
+                        });
+                    }
+                });
+                scannerControlsRef.current = controls;
+            }
+        } catch(err) {
+            console.error("Failed to start scanner:", err);
+        }
+    }
+    
+    startScanner();
+
+    // Cleanup: stop scanner when component unmounts
+    return () => {
+      if (scannerControlsRef.current) {
+        scannerControlsRef.current.stop();
+        scannerControlsRef.current = null;
+      }
+    };
+  }, [step, hasCameraPermission, toast]);
 
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -484,5 +476,3 @@ useEffect(() => {
     </>
     );
 }
-
-    
