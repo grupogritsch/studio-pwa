@@ -103,6 +103,7 @@ export function ScanForm() {
 
     const startScanner = async () => {
       try {
+        // Solicita o acesso à câmera
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         setHasCameraPermission(true);
         
@@ -111,8 +112,11 @@ export function ScanForm() {
           const zxing = await import('@zxing/browser');
           const codeReader = new zxing.BrowserQRCodeReader();
 
-          controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error) => {
+          // Inicia a decodificação
+          controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error, ctrls) => {
             if (result) {
+              // Garante que o scanner pare antes de mudar de etapa
+              ctrls.stop();
               form.setValue('scannedCode', result.getText());
               setStep('form');
               toast({
@@ -126,6 +130,7 @@ export function ScanForm() {
           });
         }
       } catch (err) {
+        // Se houver um erro, significa que a permissão foi negada
         console.error("Failed to start scanner:", err);
         setHasCameraPermission(false);
       }
@@ -133,13 +138,15 @@ export function ScanForm() {
 
     startScanner();
 
+    // Função de limpeza para parar a câmera ao sair
     return () => {
       controls?.stop();
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [step, form, toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
 
   useEffect(() => {
@@ -173,7 +180,8 @@ export function ScanForm() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const syncOfflineData = () => {
     const offlineData = JSON.parse(localStorage.getItem('offlineOccurrences') || '[]');
