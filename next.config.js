@@ -1,4 +1,9 @@
 /** @type {import('next').NextConfig} */
+
+const pwaConfig = require('./pwa-config');
+
+const withPWA = require('next-pwa')(pwaConfig);
+
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
@@ -30,4 +35,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+module.exports = withPWA(nextConfig);
