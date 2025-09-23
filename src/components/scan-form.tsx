@@ -100,19 +100,19 @@ export function ScanForm() {
     }
 
     let controls: IScannerControls | undefined;
-    let zxing: typeof import('@zxing/browser') | undefined;
+    let codeReader: BrowserQRCodeReader | undefined;
 
     const startScanner = async () => {
       setIsScannerBusy(true);
       try {
-        zxing = await import('@zxing/browser');
-        const codeReader = new zxing.BrowserQRCodeReader();
-
-        // Check for permission and get stream
-        await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        const zxing = await import('@zxing/browser');
+        codeReader = new zxing.BrowserQRCodeReader();
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         setHasCameraPermission(true);
 
         if (videoRef.current) {
+          videoRef.current.srcObject = stream;
           controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error) => {
             if (result) {
               form.setValue('scannedCode', result.getText());
@@ -124,11 +124,6 @@ export function ScanForm() {
             }
             if (error && !(error instanceof zxing.NotFoundException)) {
               console.error('ZXing error:', error);
-              toast({
-                variant: "destructive",
-                title: "Erro no Scanner",
-                description: "Não foi possível ler o código.",
-              });
             }
           });
         }
@@ -138,9 +133,9 @@ export function ScanForm() {
         toast({
           variant: 'destructive',
           title: 'Acesso à Câmera Negado',
-          description: 'Por favor, habilite a permissão da câmera e tente novamente. Se o problema persistir, você pode digitar o código manualmente.',
+          description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
         });
-        setStep('form'); // Fallback to form for manual input
+        setStep('form'); 
       } finally {
         setIsScannerBusy(false);
       }
@@ -148,9 +143,13 @@ export function ScanForm() {
 
     startScanner();
 
-    // Cleanup function
     return () => {
       controls?.stop();
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
+      }
     };
   }, [step, form, toast]);
 
@@ -492,6 +491,5 @@ export function ScanForm() {
     </Card>
   );
 }
-
 
     
