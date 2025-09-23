@@ -1,10 +1,11 @@
 /** @type {import('next').NextConfig} */
 
 const pwaConfig = require('./pwa-config');
-
 const withPWA = require('next-pwa')(pwaConfig);
 
 const nextConfig = {
+  reactStrictMode: true,
+  swcMinify: true,
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -32,6 +33,19 @@ const nextConfig = {
         pathname: '/**',
       },
     ],
+  },
+  async headers() {
+    return [
+      {
+        source: '/manifest.json',
+        headers: [
+          {
+            key: 'Content-Type',
+            value: 'application/manifest+json',
+          },
+        ],
+      },
+    ];
   },
 };
 
