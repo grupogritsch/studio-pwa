@@ -132,24 +132,18 @@ export function ScanForm() {
     let stream: MediaStream;
 
     const startScanner = async () => {
-      if (isScannerOpen && Zxing && videoRef.current && hasCameraPermission) {
+      if (isScannerOpen && Zxing && videoRef.current) {
         try {
-          const videoConstraints: MediaStreamConstraints = {
-            video: {
-              facingMode: 'environment'
-            }
-          };
-
-          stream = await navigator.mediaDevices.getUserMedia(videoConstraints);
-
-          if (videoRef.current) {
+          // We already asked for permission in openScanner, but some browsers might require it again
+          // or state might have changed. It's safer to just get the stream here.
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }});
+          
+          if(videoRef.current) {
             videoRef.current.srcObject = stream;
-            // Ensure video plays, especially on mobile
-            await videoRef.current.play();
           }
 
           codeReader = new Zxing.BrowserQRCodeReader();
-          await codeReader.decodeFromStream(stream, videoRef.current, (result, err) => {
+          codeReader.decodeFromVideoStream(stream, videoRef.current, (result, err) => {
             if (result) {
               form.setValue('scannedCode', result.getText());
               setScannerOpen(false);
@@ -169,13 +163,13 @@ export function ScanForm() {
           });
         } catch (error) {
           console.error('Error starting scanner:', error);
-          setHasCameraPermission(false); // Update permission state on error
+          setHasCameraPermission(false);
            toast({
             variant: 'destructive',
             title: 'Erro ao Iniciar Câmera',
-            description: 'Não foi possível iniciar o scanner. Tente novamente.',
+            description: 'Não foi possível iniciar o scanner. Verifique as permissões e tente novamente.',
           });
-          setScannerOpen(false); // Close dialog on error
+          setScannerOpen(false);
         }
       }
     };
@@ -192,7 +186,7 @@ export function ScanForm() {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [isScannerOpen, Zxing, form, toast, hasCameraPermission]);
+  }, [isScannerOpen, Zxing, form, toast]);
 
 
   useEffect(() => {
