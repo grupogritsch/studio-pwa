@@ -35,8 +35,9 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { submitOccurrence } from '@/lib/actions';
-import { Camera, FileText, Loader2, Package, Scan, ScanLine, Send, User, WifiOff, ArrowLeft } from 'lucide-react';
+import { Camera, FileText, Loader2, Package, ScanLine, Send, User, WifiOff, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import type { BrowserQRCodeReader, IScannerControls } from '@zxing/browser';
 
 const formSchema = z.object({
   scannedCode: z.string({ required_error: "Código é obrigatório." }).min(1, "Código é obrigatório."),
@@ -78,9 +79,8 @@ export function ScanForm() {
   const [isOffline, setIsOffline] = useState(false);
   const [step, setStep] = useState<'scan' | 'form'>('scan');
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [Zxing, setZxing] = useState<any>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
-  const [isScannerStarting, setIsScannerStarting] = useState(true);
+  const [isScannerBusy, setIsScannerBusy] = useState(true);
   const router = useRouter();
 
 
@@ -93,30 +93,27 @@ export function ScanForm() {
       receiverDocument: '',
     },
   });
-
+  
   useEffect(() => {
-    import('@zxing/browser').then(zxing => {
-      setZxing(zxing);
-    });
-  }, []);
+    if (step !== 'scan') {
+      return;
+    }
 
-  useEffect(() => {
-    let codeReader: any;
-    let stream: MediaStream;
+    let controls: IScannerControls | undefined;
+    let zxing: typeof import('@zxing/browser') | undefined;
 
     const startScanner = async () => {
-      if (step === 'scan' && Zxing && videoRef.current) {
-        setIsScannerStarting(true);
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-          setHasCameraPermission(true);
+      setIsScannerBusy(true);
+      try {
+        zxing = await import('@zxing/browser');
+        const codeReader = new zxing.BrowserQRCodeReader();
 
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
+        // Check for permission and get stream
+        await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        setHasCameraPermission(true);
 
-          codeReader = new Zxing.BrowserQRCodeReader();
-          codeReader.decodeFromVideoStream(stream, videoRef.current, (result, err) => {
+        if (videoRef.current) {
+          controls = await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error) => {
             if (result) {
               form.setValue('scannedCode', result.getText());
               setStep('form');
@@ -125,41 +122,37 @@ export function ScanForm() {
                 description: "Continue para preencher a ocorrência.",
               });
             }
-            if (err && !(err instanceof Zxing.NotFoundException)) {
-              console.error(err);
-               toast({
+            if (error && !(error instanceof zxing.NotFoundException)) {
+              console.error('ZXing error:', error);
+              toast({
                 variant: "destructive",
                 title: "Erro no Scanner",
                 description: "Não foi possível ler o código.",
               });
             }
           });
-        } catch (error) {
-          console.error('Error starting scanner:', error);
-          setHasCameraPermission(false);
-           toast({
-            variant: 'destructive',
-            title: 'Erro ao Iniciar Câmera',
-            description: 'Não foi possível iniciar o scanner. Verifique as permissões e tente novamente.',
-          });
-          setStep('form'); // Go to form to allow manual input
-        } finally {
-            setIsScannerStarting(false);
         }
+      } catch (err) {
+        console.error("Failed to start scanner:", err);
+        setHasCameraPermission(false);
+        toast({
+          variant: 'destructive',
+          title: 'Acesso à Câmera Negado',
+          description: 'Por favor, habilite a permissão da câmera e tente novamente. Se o problema persistir, você pode digitar o código manualmente.',
+        });
+        setStep('form'); // Fallback to form for manual input
+      } finally {
+        setIsScannerBusy(false);
       }
     };
 
     startScanner();
 
+    // Cleanup function
     return () => {
-      if (codeReader) {
-        codeReader.reset();
-      }
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
+      controls?.stop();
     };
-  }, [step, Zxing, form, toast]);
+  }, [step, form, toast]);
 
 
   useEffect(() => {
@@ -329,20 +322,10 @@ export function ScanForm() {
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-3/4 h-1/3 border-4 border-dashed border-white/50 rounded-lg" />
         </div>
-        {isScannerStarting && (
+        {isScannerBusy && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
                 <Loader2 className="h-10 w-10 animate-spin text-white mb-4" />
                 <p className="text-white">Iniciando câmera...</p>
-            </div>
-        )}
-        {hasCameraPermission === false && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-                <Alert variant="destructive" className="max-w-sm">
-                  <AlertTitle>Acesso à Câmera Negado</AlertTitle>
-                  <AlertDescription>
-                    Por favor, habilite a permissão da câmera nas configurações do seu navegador e atualize a página.
-                  </AlertDescription>
-                </Alert>
             </div>
         )}
         <Button 
@@ -509,3 +492,6 @@ export function ScanForm() {
     </Card>
   );
 }
+
+
+    
