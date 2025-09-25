@@ -1,9 +1,14 @@
-
 "use client";
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Plus, Check, Package, Clock, WifiOff, Download } from 'lucide-react';
+import { WifiOff, Check, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { db } from '@/lib/db';
+import { apiService } from '@/lib/api';
+import { Package, Calendar, Truck } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,231 +20,481 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/db';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
-
-type Occurrence = {
+type Roteiro = {
   id: number;
-  scannedCode: string;
-  occurrence: string;
-  timestamp: string;
-  receiverName?: string;
-  receiverDocument?: string;
+  startDate: string;
+  endDate: string;
+  totalOccurrences: number;
+  syncedOccurrences: number;
+  vehiclePlate?: string;
+  startKm?: number;
 };
-
-// Define a interface para o evento de instalação
-interface BeforeInstallPromptEvent extends Event {
-  readonly platforms: Array<string>;
-  readonly userChoice: Promise<{
-    outcome: 'accepted' | 'dismissed';
-    platform: string;
-  }>;
-  prompt(): Promise<void>;
-}
-
 
 export default function Home() {
   const router = useRouter();
-  const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
-  const [offlineOccurrencesCount, setOfflineOccurrencesCount] = useState(0);
-  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [roteiros, setRoteiros] = useState<Roteiro[]>([]);
+  const [activeRoteiro, setActiveRoteiro] = useState<any>(null);
+  const [showStartDialog, setShowStartDialog] = useState(false);
+  const [vehiclePlate, setVehiclePlate] = useState('');
+  const [startKm, setStartKm] = useState('');
+  const [isCreatingRoteiro, setIsCreatingRoteiro] = useState(false);
   const { toast } = useToast();
-  
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setInstallPrompt(e as BeforeInstallPromptEvent);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
-  }, []);
 
   useEffect(() => {
+    const updateOnlineStatus = () => {
+      setIsOnline(navigator.onLine);
+    };
+
+    const handleOnline = () => {
+      setIsOnline(true);
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    updateOnlineStatus();
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Carregar roteiros finalizados e roteiro ativo
     async function loadData() {
       if (typeof window !== 'undefined') {
-        const savedOccurrences = await db.getAllOccurrences();
-        setOccurrences(savedOccurrences.reverse());
+        console.log('Carregando roteiros...');
+        const savedRoteiros = await db.getAllRoteiros();
+        console.log('Roteiros carregados:', savedRoteiros);
+        setRoteiros(savedRoteiros.reverse());
 
-        const offlineCount = await db.countOfflineOccurrences();
-        setOfflineOccurrencesCount(offlineCount);
+        // Carregar roteiro ativo baseado no localStorage
+        const roteiroData = localStorage.getItem('currentRoteiroData');
+        if (roteiroData) {
+          const data = JSON.parse(roteiroData);
+          // Só considerar roteiro ativo se tem apiRoteiroId (criado via API)
+          if (data.apiRoteiroId) {
+            const activeOccurrences = await db.getActiveOccurrences();
+            const syncedCount = activeOccurrences.filter(occ => occ.synced).length;
+
+            setActiveRoteiro({
+              occurrences: activeOccurrences,
+              totalOccurrences: activeOccurrences.length,
+              syncedOccurrences: syncedCount,
+              vehiclePlate: data.vehiclePlate || 'Roteiro Ativo',
+              apiRoteiroId: data.apiRoteiroId
+            });
+          } else {
+            // Dados inválidos no localStorage, limpar
+            localStorage.removeItem('currentRoteiroData');
+            setActiveRoteiro(null);
+          }
+        } else {
+          setActiveRoteiro(null);
+        }
       }
     }
+
     loadData();
 
-    const handleOnline = async () => {
-      const offlineDataToSync = await db.getOfflineOccurrences();
-      if (offlineDataToSync.length > 0) {
-        // Here you would normally sync with your API.
-        // For now, we'll just clear it and notify the user.
-        console.log('Syncing offline data...', offlineDataToSync);
-        
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        await db.clearOfflineData();
-        setOfflineOccurrencesCount(0);
-        toast({
-          title: "Sincronização completa!",
-          description: `${offlineDataToSync.length} ocorrências offline foram enviadas.`,
-        });
-        // Refresh the main list after sync
-        loadData();
-      }
+    // Recarregar roteiros quando a página volta ao foco (após finalizar roteiro)
+    const handleFocus = () => {
+      console.log('Página ganhou foco, recarregando roteiros...');
+      loadData();
     };
 
-    window.addEventListener('online', handleOnline);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('focus', handleFocus);
     };
-  }, [toast]);
+  }, []);
 
-  const handleNewOccurrence = () => {
-    router.push('/ocorrencia');
+  // Recarregar sempre que a página for visitada (incluindo navegação)
+  useEffect(() => {
+    async function reloadData() {
+      if (typeof window !== 'undefined') {
+        console.log('Recarregando dados via navegação...');
+        const savedRoteiros = await db.getAllRoteiros();
+        console.log('Roteiros recarregados:', savedRoteiros);
+        setRoteiros(savedRoteiros.reverse());
+
+        // Carregar roteiro ativo baseado no localStorage
+        const roteiroData = localStorage.getItem('currentRoteiroData');
+        if (roteiroData) {
+          const data = JSON.parse(roteiroData);
+          // Só considerar roteiro ativo se tem apiRoteiroId (criado via API)
+          if (data.apiRoteiroId) {
+            const activeOccurrences = await db.getActiveOccurrences();
+            const syncedCount = activeOccurrences.filter(occ => occ.synced).length;
+
+            setActiveRoteiro({
+              occurrences: activeOccurrences,
+              totalOccurrences: activeOccurrences.length,
+              syncedOccurrences: syncedCount,
+              vehiclePlate: data.vehiclePlate || 'Roteiro Ativo',
+              apiRoteiroId: data.apiRoteiroId
+            });
+          } else {
+            // Dados inválidos no localStorage, limpar
+            localStorage.removeItem('currentRoteiroData');
+            setActiveRoteiro(null);
+          }
+        } else {
+          setActiveRoteiro(null);
+        }
+      }
+    }
+    reloadData();
+  }, [router]);
+
+  const handleStartNewRoteiro = () => {
+    setShowStartDialog(true);
   };
 
-  const handleFinish = async () => {
-    if (typeof window !== 'undefined') {
-      await db.clearAllData();
-      setOccurrences([]);
-      setOfflineOccurrencesCount(0);
+  const handleStartRoteiroSubmit = async () => {
+    if (!vehiclePlate.trim() || !startKm.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Campos obrigatórios",
+        description: "Preencha a placa do veículo e a quilometragem inicial."
+      });
+      return;
+    }
+
+    // Verificar se está online
+    if (!isOnline) {
+      toast({
+        variant: "destructive",
+        title: "Sem conexão",
+        description: "É necessário estar online para iniciar um novo roteiro."
+      });
+      return;
+    }
+
+    setIsCreatingRoteiro(true);
+
+    try {
+      // Criar roteiro na API primeiro
+      const roteiroData = {
+        vehiclePlate: vehiclePlate.trim(),
+        startKm: parseInt(startKm),
+        startDate: new Date().toISOString()
+      };
+
+      const result = await apiService.createRoteiro(roteiroData);
+
+      if (result.success && result.id) {
+        // Salvar dados do roteiro com o ID da API
+        localStorage.setItem('currentRoteiroData', JSON.stringify({
+          ...roteiroData,
+          apiRoteiroId: result.id
+        }));
+
+        toast({
+          title: "Roteiro criado",
+          description: `Roteiro #${result.id} criado com sucesso!`
+        });
+
+        setShowStartDialog(false);
+        setVehiclePlate('');
+        setStartKm('');
+        router.push('/roteiro');
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Erro ao criar roteiro",
+          description: result.error || "Não foi possível criar o roteiro na API."
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao criar roteiro:', error);
+      toast({
+        variant: "destructive",
+        title: "Erro de conexão",
+        description: "Não foi possível conectar com o servidor."
+      });
+    } finally {
+      setIsCreatingRoteiro(false);
+    }
+  };
+
+  const handleFinishRoteiro = async () => {
+    if (!activeRoteiro || typeof window === 'undefined') return;
+
+    const totalOccurrences = activeRoteiro.totalOccurrences;
+    const syncedOccurrences = activeRoteiro.syncedOccurrences;
+
+    console.log('Finalizando roteiro:', { totalOccurrences, syncedOccurrences });
+
+    // Recuperar dados do roteiro do localStorage
+    const roteiroData = localStorage.getItem('currentRoteiroData');
+    let vehiclePlate = '';
+    let startKm = 0;
+    let startDate = new Date().toISOString();
+    let apiRoteiroId = null;
+
+    if (roteiroData) {
+      const data = JSON.parse(roteiroData);
+      vehiclePlate = data.vehiclePlate || '';
+      startKm = data.startKm || 0;
+      startDate = data.startDate || startDate;
+      apiRoteiroId = data.apiRoteiroId || null;
+    }
+
+    // Salvar resumo do roteiro
+    const now = new Date().toISOString();
+    const roteiroSummary = {
+      startDate,
+      endDate: now,
+      totalOccurrences,
+      syncedOccurrences,
+      vehiclePlate,
+      startKm
+    };
+
+    console.log('Salvando roteiro:', roteiroSummary);
+
+    try {
+      const roteiroId = await db.addRoteiro(roteiroSummary);
+      console.log('Roteiro salvo com ID:', roteiroId);
+
+      // Associar todas as ocorrências ao roteiro (usando o ID local, não o da API)
+      // Se o roteiro foi criado via API, as ocorrências já devem ter o apiRoteiroId
+      if (!apiRoteiroId) {
+        // Fallback para roteiros antigos
+        for (const occurrence of activeRoteiro.occurrences) {
+          await db.updateOccurrenceWithRoteiro(occurrence.id, roteiroId as number, occurrence.synced || false);
+        }
+      }
+
       toast({
         title: "Roteiro finalizado",
-        description: "Todos os dados foram limpos do dispositivo."
+        description: `${totalOccurrences} ocorrências registradas.`
       });
-    }
-  };
 
-  const handleInstallClick = async () => {
-    if (!installPrompt) return;
+      // Limpar dados do localStorage
+      localStorage.removeItem('currentRoteiroData');
 
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') {
+      // Recarregar dados
+      const savedRoteiros = await db.getAllRoteiros();
+      setRoteiros(savedRoteiros.reverse());
+      setActiveRoteiro(null);
+
+    } catch (error) {
+      console.error('Erro ao salvar roteiro:', error);
       toast({
-        title: 'App instalado!',
-        description: 'O ScanTracker foi adicionado à sua tela inicial.',
+        variant: "destructive",
+        title: "Erro",
+        description: "Não foi possível finalizar o roteiro."
       });
-    }
-    setInstallPrompt(null);
-  };
-  
-  const getOccurrenceLabel = (value: string) => {
-    switch (value) {
-      case 'entregue': return 'Entregue';
-      case 'avaria': return 'Avaria';
-      case 'extravio': return 'Extravio';
-      case 'devolucao': return 'Devolução';
-      case 'recusado': return 'Recusado';
-      case 'feriado': return 'Feriado';
-      case 'outros': return 'Outros';
-      default: return value;
     }
   };
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-secondary">
-      <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 border-b bg-primary px-4 shadow-sm md:px-6">
+      <header className="sticky top-0 z-10 flex h-20 items-center justify-center gap-4 border-b px-4 shadow-sm md:px-6" style={{backgroundColor: '#222E3C'}}>
         <div style={{
           fontSize: '32px',
           fontWeight: 'bold',
           fontFamily: 'Roboto Bold',
           letterSpacing: '1px',
         }}>
-          <span style={{color:'#ffffff'}}>SCAN</span><span style={{ color: '#FFA500' }}>TRACKER</span>
+          <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FFA500' }}>K</span>
         </div>
-        {installPrompt && (
-          <Button variant="outline" size="sm" onClick={handleInstallClick} className="bg-accent text-accent-foreground hover:bg-accent/90">
-            <Download className="mr-2 h-4 w-4" />
-            Instalar App
-          </Button>
-        )}
+        <div className="absolute right-4 flex items-center gap-2">
+          {!isOnline && <WifiOff className="h-5 w-5 text-red-500" />}
+        </div>
       </header>
-      <main className="flex flex-1 flex-col items-center p-4 text-center">
-        {offlineOccurrencesCount > 0 && (
-          <div className="w-full max-w-2xl mb-4">
-            <Card className="bg-destructive/10 border-destructive/50">
-              <CardContent className="p-3 flex items-center justify-center gap-2 text-destructive">
-                <WifiOff className="h-5 w-5"/>
-                <p className="font-semibold">{offlineOccurrencesCount} ocorrência(s) aguardando para sincronizar.</p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-        {occurrences.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center">
-            <h2 className="text-xl text-muted-foreground">
-              Nenhuma ocorrência registrada ainda.
-            </h2>
-          </div>
-        ) : (
-          <div className="w-full max-w-2xl space-y-4">
-            <h2 className="text-2xl font-bold text-left">Ocorrências Registradas</h2>
-            {occurrences.map((occ, index) => (
-               <Card key={index} className="text-left">
+
+      <main className="flex flex-1 flex-col items-center p-4 text-center pb-24">
+        <div className="w-full max-w-2xl mt-8 space-y-6">
+          {/* Roteiro ativo */}
+          {activeRoteiro && (
+            <div className="space-y-4">
+              <Card
+                className="text-left cursor-pointer hover:bg-accent/50 transition-colors"
+                onClick={(e) => {
+                  // Prevenir navegação se clicar no botão finalizar
+                  if (e.target.closest('button')) return;
+                  router.push('/roteiro');
+                }}
+              >
                 <CardHeader className="p-4">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Package className="h-5 w-5 text-primary"/>
-                    {getOccurrenceLabel(occ.occurrence)}
+                  <CardTitle className="text-lg flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Truck className="h-5 w-5 text-primary"/>
+                      {activeRoteiro.vehiclePlate || 'Roteiro Ativo'}
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700"
+                          disabled={activeRoteiro.totalOccurrences === 0}
+                        >
+                          <Check className="h-4 w-4 mr-1" />
+                          Finalizar
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Finalizar Roteiro</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Tem certeza que quer finalizar o roteiro? Esta ação não pode ser desfeita e o roteiro será movido para o histórico.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleFinishRoteiro}>Confirmar</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
-                  <p className="text-sm text-muted-foreground break-all">
-                    <b>Código:</b> {occ.scannedCode}
-                  </p>
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <Clock className="h-4 w-4"/>
-                    {new Date(occ.timestamp).toLocaleString()}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground"/>
+                      <span className="text-sm text-muted-foreground">
+                        {new Date().toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {activeRoteiro.syncedOccurrences}/{activeRoteiro.totalOccurrences}
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        )}
+            </div>
+          )}
+
+          {/* Roteiros finalizados */}
+          {roteiros.length > 0 && (
+            <div className="space-y-4">
+              {roteiros.map((roteiro) => (
+                <Card
+                  key={roteiro.id}
+                  className="text-left cursor-pointer hover:bg-accent/50 transition-colors"
+                  onClick={() => router.push(`/roteiro/${roteiro.id}`)}
+                >
+                  <CardHeader className="p-4">
+                    <CardTitle className="text-lg flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Truck className="h-5 w-5 text-primary"/>
+                        {roteiro.vehiclePlate || `Roteiro #${roteiro.id}`}
+                      </div>
+                      <div className="text-sm text-green-600 font-bold">
+                        Finalizado
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-0">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-muted-foreground"/>
+                        <span className="text-sm text-muted-foreground">
+                          {new Date(roteiro.endDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {roteiro.syncedOccurrences}/{roteiro.totalOccurrences}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Mensagem quando não há roteiros */}
+          {!activeRoteiro && roteiros.length === 0 && (
+            <div className="text-muted-foreground">
+              Nenhum roteiro ainda.
+            </div>
+          )}
+        </div>
       </main>
-      <footer className="sticky bottom-0 z-10 flex justify-center items-center gap-4 bg-transparent p-4">
+
+      <footer className="sticky bottom-0 z-10 flex justify-center items-center gap-4 border-t p-4" style={{backgroundColor: '#222E3C'}}>
         <Button
-          variant="default"
+          onClick={handleStartNewRoteiro}
           size="icon"
-          className="h-16 w-16 rounded-full shadow-lg"
-          onClick={handleNewOccurrence}
-          aria-label="Nova Ocorrência"
+          className="h-16 w-48 rounded-full shadow-lg text-white text-lg font-semibold"
+          style={{ backgroundColor: activeRoteiro || !isOnline ? '#FFBB66' : '#FFA500' }}
+          disabled={!!activeRoteiro || !isOnline}
         >
-          <Plus className="h-10 w-10" />
+          Iniciar Roteiro
         </Button>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="default"
-              size="icon"
-              className="h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90"
-              aria-label="Finalizar"
-              disabled={occurrences.length === 0}
-            >
-              <Check className="h-10 w-10" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Finalizar Roteiro</AlertDialogTitle>
-              <AlertDialogDescription>
-                Tem certeza que quer finalizar o roteiro? Esta ação não pode ser desfeita e limpará todas as ocorrências registradas.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleFinish}>Confirmar</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </footer>
+
+      {/* Modal para iniciar roteiro */}
+      <Dialog open={showStartDialog} onOpenChange={setShowStartDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Iniciar Roteiro</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="vehiclePlate">Placa do Veículo</Label>
+              <Input
+                id="vehiclePlate"
+                placeholder="Ex: ABC-1234"
+                value={vehiclePlate}
+                onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
+                className="uppercase"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="startKm">Quilometragem Inicial</Label>
+              <Input
+                id="startKm"
+                type="number"
+                placeholder="Ex: 12000"
+                value={startKm}
+                onChange={(e) => setStartKm(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowStartDialog(false);
+                setVehiclePlate('');
+                setStartKm('');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleStartRoteiroSubmit}
+              style={{ backgroundColor: '#FFA500' }}
+              disabled={isCreatingRoteiro || !isOnline}
+            >
+              {isCreatingRoteiro ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Criando...
+                </>
+              ) : (
+                'Iniciar'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

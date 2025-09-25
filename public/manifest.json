@@ -1,6 +1,6 @@
 {
-  "name": "ScanTracker",
-  "short_name": "ScanTracker",
+  "name": "Logistik",
+  "short_name": "Logistik",
   "description": "App para registro de ocorrências de entrega",
   "start_url": "/",
   "display": "standalone",
