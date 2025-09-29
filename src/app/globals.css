@@ -73,3 +73,33 @@ body {
 #__next_dev_page_interceptor__ {
   display: none;
 }
+
+/* Custom input styles with #222E3C border */
+.input-custom {
+  @apply flex h-10 w-full rounded-md bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
+  border: 1px solid #222E3C !important;
+  box-shadow: none !important;
+}
+
+.input-custom:focus {
+  border: 1px solid #222E3C !important;
+  box-shadow: 0 0 0 2px rgba(34, 46, 60, 0.1) !important;
+  outline: none !important;
+}
+
+.input-custom:focus-visible {
+  border: 1px solid #222E3C !important;
+  box-shadow: 0 0 0 2px rgba(34, 46, 60, 0.1) !important;
+  outline: none !important;
+}
+
+/* Custom select styles with #222E3C border */
+.select-custom {
+  border: 1px solid #222E3C !important;
+}
+
+.select-custom:focus {
+  border: 1px solid #222E3C !important;
+  box-shadow: 0 0 0 2px rgba(34, 46, 60, 0.1) !important;
+  outline: none !important;
+}

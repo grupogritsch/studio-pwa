@@ -453,7 +453,7 @@ export default function Home() {
                 placeholder="Ex: ABC-1234"
                 value={vehiclePlate}
                 onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
-                className="uppercase"
+                className="uppercase input-custom"
               />
             </div>
             <div className="space-y-2">
@@ -464,6 +464,7 @@ export default function Home() {
                 placeholder="Ex: 12000"
                 value={startKm}
                 onChange={(e) => setStartKm(e.target.value)}
+                className="input-custom"
               />
             </div>
           </div>

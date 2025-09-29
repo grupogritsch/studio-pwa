@@ -464,6 +464,7 @@ export function ScanForm() {
                           <FormControl>
                             <Input
                               placeholder="Digite o código manualmente"
+                              className="input-custom"
                               {...field}
                               onChange={(e) => {
                                 field.onChange(e);
@@ -485,7 +486,7 @@ export function ScanForm() {
                         <FormLabel>Ocorrência</FormLabel>
                         <Select onValueChange={field.onChange} defaultValue={field.value}>
                           <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger className="select-custom">
                               <Package className="mr-2 h-5 w-5 text-muted-foreground" />
                               <SelectValue placeholder="Selecione o tipo de ocorrência" />
                             </SelectTrigger>
