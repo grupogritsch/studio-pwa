@@ -52,6 +52,7 @@ export const apiService = {
 
       const response = await fetch(`${API_BASE_URL}/api/`, {
         method: 'POST',
+        credentials: 'include',
         body: formData,
       });
 
@@ -182,6 +183,7 @@ export const apiService = {
 
       const response = await fetch(`${API_BASE_URL}/api/`, {
         method: 'POST',
+        credentials: 'include',
         body: formData,
         // Não definir Content-Type para FormData - o browser define automaticamente
       });
@@ -263,6 +265,7 @@ export const apiService = {
       console.log(`Verificando conexão com ${API_BASE_URL}/health/`);
       const response = await fetch(`${API_BASE_URL}/health/`, {
         method: 'GET',
+        credentials: 'include',
         // Remove timeout que não é suportado pelo fetch API
       });
       console.log('Status da verificação de conexão:', response.status);
