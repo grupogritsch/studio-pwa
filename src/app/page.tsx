@@ -357,7 +357,12 @@ export default function Home() {
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction onClick={handleFinishRoteiro}>Confirmar</AlertDialogAction>
+                          <AlertDialogAction
+                            onClick={handleFinishRoteiro}
+                            className="bg-accent hover:bg-accent/90 text-accent-foreground"
+                          >
+                            Confirmar
+                          </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
