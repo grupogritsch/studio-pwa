@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { WifiOff, Check, Loader2 } from 'lucide-react';
+import { WifiOff, Wifi, Check, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { db } from '@/lib/db';
@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SyncStatus } from '@/components/sync-status';
+import { useRouteProtection } from '@/hooks/use-route-protection';
 
 type Roteiro = {
   id: number;
@@ -51,6 +51,14 @@ export default function Home() {
   const [startKm, setStartKm] = useState('');
   const [isCreatingRoteiro, setIsCreatingRoteiro] = useState(false);
   const { toast } = useToast();
+  const { hasActiveRoteiro, isLoading, redirectToRoteiro } = useRouteProtection();
+
+  // Redirecionar para /roteiro se houver roteiro ativo
+  useEffect(() => {
+    if (!isLoading && hasActiveRoteiro) {
+      redirectToRoteiro();
+    }
+  }, [hasActiveRoteiro, isLoading, redirectToRoteiro]);
 
   useEffect(() => {
     const updateOnlineStatus = () => {
@@ -202,11 +210,6 @@ export default function Home() {
           apiRoteiroId: result.id
         }));
 
-        toast({
-          title: "Roteiro criado",
-          description: `Roteiro #${result.id} criado com sucesso!`
-        });
-
         setShowStartDialog(false);
         setVehiclePlate('');
         setStartKm('');
@@ -279,11 +282,6 @@ export default function Home() {
         }
       }
 
-      toast({
-        title: "Roteiro finalizado",
-        description: `${totalOccurrences} ocorrências registradas.`
-      });
-
       // Limpar dados do localStorage
       localStorage.removeItem('currentRoteiroData');
 
@@ -304,7 +302,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-secondary">
-      <header className="sticky top-0 z-10 flex h-20 items-center justify-center gap-4 border-b px-4 shadow-sm md:px-6" style={{backgroundColor: '#222E3C'}}>
+      <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 border-b px-4 shadow-sm md:px-6" style={{backgroundColor: '#222E3C'}}>
         <div style={{
           fontSize: '32px',
           fontWeight: 'bold',
@@ -313,16 +311,16 @@ export default function Home() {
         }}>
           <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FFA500' }}>K</span>
         </div>
-        <div className="absolute right-4 flex items-center gap-2">
-          {!isOnline && <WifiOff className="h-5 w-5 text-red-500" />}
+        <div className="flex items-center gap-2">
+          {!isOnline ? (
+            <WifiOff className="h-5 w-5 text-white" />
+          ) : (
+            <Wifi className="h-5 w-5 text-white" />
+          )}
         </div>
       </header>
 
       <main className="flex flex-1 flex-col items-center p-4 text-center pb-24">
-        {/* Status de Sincronização */}
-        <div className="w-full max-w-2xl mt-4 mb-6">
-          <SyncStatus />
-        </div>
 
         <div className="w-full max-w-2xl space-y-6">
           {/* Roteiro ativo */}
@@ -330,48 +328,12 @@ export default function Home() {
             <div className="space-y-4">
               <Card
                 className="text-left cursor-pointer hover:bg-accent/50 transition-colors"
-                onClick={(e) => {
-                  // Prevenir navegação se clicar no botão finalizar
-                  if (e.target.closest('button')) return;
-                  router.push('/roteiro');
-                }}
+                onClick={() => router.push('/roteiro')}
               >
                 <CardHeader className="p-4">
-                  <CardTitle className="text-lg flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Truck className="h-5 w-5 text-primary"/>
-                      {activeRoteiro.vehiclePlate || 'Roteiro Ativo'}
-                    </div>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="bg-green-600 hover:bg-green-700"
-                          disabled={activeRoteiro.totalOccurrences === 0}
-                        >
-                          <Check className="h-4 w-4 mr-1" />
-                          Finalizar
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Finalizar Roteiro</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Tem certeza que quer finalizar o roteiro? Esta ação não pode ser desfeita e o roteiro será movido para o histórico.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={handleFinishRoteiro}
-                            className="bg-accent hover:bg-accent/90 text-accent-foreground"
-                          >
-                            Confirmar
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Truck className="h-5 w-5 text-primary"/>
+                    {activeRoteiro.vehiclePlate || 'Roteiro Ativo'}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
@@ -442,7 +404,7 @@ export default function Home() {
         <Button
           onClick={handleStartNewRoteiro}
           size="icon"
-          className="h-16 w-48 rounded-full shadow-lg text-white text-lg font-semibold"
+          className="h-16 w-48 rounded-full shadow-lg text-black text-lg font-semibold"
           style={{ backgroundColor: activeRoteiro || !isOnline ? '#FFBB66' : '#FFA500' }}
           disabled={!!activeRoteiro || !isOnline}
         >
@@ -497,7 +459,7 @@ export default function Home() {
             >
               {isCreatingRoteiro ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin text-black" />
                   Criando...
                 </>
               ) : (

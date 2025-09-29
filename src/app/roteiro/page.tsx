@@ -3,7 +3,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { QrCode, Check, Package, Clock, WifiOff, Download, Edit3, Clock4, CheckCircle, RefreshCw, Wifi, ArrowLeft } from 'lucide-react';
+import { QrCode, Check, Package, Clock, WifiOff, Download, Edit3, Clock4, CheckCircle, RefreshCw, Wifi, Send } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/db';
 import { apiService } from '@/lib/api';
+import { useRouteProtection } from '@/hooks/use-route-protection';
 
 
 type Occurrence = {
@@ -48,6 +49,14 @@ export default function RoteiroPage() {
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
   const [offlineOccurrencesCount, setOfflineOccurrencesCount] = useState(0);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const { hasActiveRoteiro, isLoading, redirectToHome } = useRouteProtection();
+
+  // Redirecionar para home se não houver roteiro ativo
+  useEffect(() => {
+    if (!isLoading && !hasActiveRoteiro) {
+      redirectToHome();
+    }
+  }, [hasActiveRoteiro, isLoading, redirectToHome]);
   const [isOnline, setIsOnline] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncingIds, setSyncingIds] = useState<Set<number>>(new Set());
@@ -93,17 +102,43 @@ export default function RoteiroPage() {
     };
   }, []);
 
-  useEffect(() => {
-    async function loadData() {
-      if (typeof window !== 'undefined') {
-        const savedOccurrences = await db.getAllOccurrences();
-        setOccurrences(savedOccurrences.reverse());
+  const loadData = async () => {
+    if (typeof window !== 'undefined') {
+      console.log('Carregando ocorrências ativas...');
+      const activeOccurrences = await db.getActiveOccurrences();
+      console.log('Ocorrências carregadas na página roteiro:', activeOccurrences);
+      setOccurrences(activeOccurrences.reverse());
 
-        const offlineCount = await db.countOfflineOccurrences();
-        setOfflineOccurrencesCount(offlineCount);
-      }
+      const offlineCount = activeOccurrences.filter(occ => !occ.synced).length;
+      setOfflineOccurrencesCount(offlineCount);
     }
+  };
+
+  useEffect(() => {
     loadData();
+  }, []);
+
+  // Recarregar quando a página ganhar foco (quando voltar de adicionar ocorrência)
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('Página roteiro ganhou foco, recarregando...');
+      loadData();
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('Página roteiro ficou visível, recarregando...');
+        loadData();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const handleNewOccurrence = () => {
@@ -114,12 +149,81 @@ export default function RoteiroPage() {
     router.push('/ocorrencia?mode=manual');
   };
 
+  const handleFinishRoteiro = async () => {
+    if (typeof window === 'undefined') return;
+
+    const totalOccurrences = occurrences.length;
+    const syncedOccurrences = occurrences.filter(occ => occ.synced).length;
+
+    console.log('Finalizando roteiro:', { totalOccurrences, syncedOccurrences });
+
+    // Recuperar dados do roteiro do localStorage
+    const roteiroData = localStorage.getItem('currentRoteiroData');
+    let vehiclePlate = '';
+    let startKm = 0;
+    let startDate = new Date().toISOString();
+    let apiRoteiroId = null;
+
+    if (roteiroData) {
+      const data = JSON.parse(roteiroData);
+      vehiclePlate = data.vehiclePlate || '';
+      startKm = data.startKm || 0;
+      startDate = data.startDate || startDate;
+      apiRoteiroId = data.apiRoteiroId || null;
+    }
+
+    // Salvar resumo do roteiro
+    const now = new Date().toISOString();
+    const roteiroSummary = {
+      startDate,
+      endDate: now,
+      totalOccurrences,
+      syncedOccurrences,
+      vehiclePlate,
+      startKm
+    };
+
+    console.log('Salvando roteiro:', roteiroSummary);
+
+    try {
+      const roteiroId = await db.addRoteiro(roteiroSummary);
+      console.log('Roteiro salvo com ID:', roteiroId);
+
+      // Associar todas as ocorrências ao roteiro (usando o ID local, não o da API)
+      // Se o roteiro foi criado via API, as ocorrências já devem ter o apiRoteiroId
+      if (!apiRoteiroId) {
+        // Fallback para roteiros antigos
+        for (const occurrence of occurrences) {
+          await db.updateOccurrenceWithRoteiro(occurrence.id, roteiroId as number, occurrence.synced || false);
+        }
+      }
+
+      // Limpar dados do localStorage
+      localStorage.removeItem('currentRoteiroData');
+
+      // Limpar apenas as ocorrências do roteiro atual (não todas)
+      setOccurrences([]);
+      setOfflineOccurrencesCount(0);
+
+      // Voltar para a página inicial
+      router.push('/');
+    } catch (error) {
+      console.error('Erro ao salvar roteiro:', error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Não foi possível finalizar o roteiro."
+      });
+    }
+  };
+
   const handleSyncAll = useCallback(async () => {
     if (!isOnline || isSyncing) return;
 
     setIsSyncing(true);
     try {
-      const unsyncedOccurrences = await db.getUnsyncedOccurrences();
+      const activeOccurrences = await db.getActiveOccurrences();
+      const unsyncedOccurrences = activeOccurrences.filter(occ => !occ.synced);
 
       if (unsyncedOccurrences.length === 0) {
         toast({
@@ -151,8 +255,7 @@ export default function RoteiroPage() {
 
       // Clear syncing state and reload data
       setSyncingIds(new Set());
-      const savedOccurrences = await db.getAllOccurrences();
-      setOccurrences(savedOccurrences.reverse());
+      await loadData();
 
       if (successes > 0) {
         toast({
@@ -211,11 +314,6 @@ export default function RoteiroPage() {
         // Limpar apenas as ocorrências do roteiro atual (não todas)
         setOccurrences([]);
         setOfflineOccurrencesCount(0);
-
-        toast({
-          title: "Roteiro finalizado",
-          description: `${totalOccurrences} ocorrências registradas.`
-        });
 
         // Voltar para a página inicial
         router.push('/');
@@ -312,6 +410,35 @@ export default function RoteiroPage() {
     return "Puxe para sincronizar";
   };
 
+  // Mostrar loading enquanto verifica
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen w-full flex-col bg-secondary">
+        <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 border-b px-4 shadow-sm md:px-6" style={{backgroundColor: '#222E3C'}}>
+          <div style={{
+            fontSize: '32px',
+            fontWeight: 'bold',
+            fontFamily: 'Roboto Bold',
+            letterSpacing: '1px',
+          }}>
+            <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FFA500' }}>K</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Wifi className="h-5 w-5 text-white" />
+          </div>
+        </header>
+        <main className="flex flex-1 flex-col items-center justify-center">
+          <div className="flex items-center justify-center h-96">Verificando roteiro...</div>
+        </main>
+      </div>
+    );
+  }
+
+  // Não renderizar se não há roteiro ativo (será redirecionado)
+  if (!hasActiveRoteiro) {
+    return null;
+  }
+
   return (
     <div ref={containerRef} className="flex min-h-screen w-full flex-col bg-secondary relative">
       {/* Pull to refresh indicator */}
@@ -350,15 +477,11 @@ export default function RoteiroPage() {
           <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FFA500' }}>K</span>
         </div>
         <div className="flex items-center gap-2">
-          {!isOnline && <WifiOff className="h-5 w-5 text-red-500" />}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.push('/')}
-            className="text-white hover:bg-white/10"
-          >
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
+          {!isOnline ? (
+            <WifiOff className="h-5 w-5 text-white" />
+          ) : (
+            <Wifi className="h-5 w-5 text-white" />
+          )}
         </div>
       </header>
       <main className="flex flex-1 flex-col items-center p-4 text-center pb-24">
@@ -366,7 +489,7 @@ export default function RoteiroPage() {
           <div className="w-full max-w-2xl mb-4">
             <Card className="bg-destructive/10 border-destructive/50">
               <CardContent className="p-3 flex items-center justify-center gap-2 text-destructive">
-                <WifiOff className="h-5 w-5"/>
+                <WifiOff className="h-5 w-5 text-white"/>
                 <p className="font-semibold">{offlineOccurrencesCount} ocorrência(s) aguardando para sincronizar.</p>
               </CardContent>
             </Card>
@@ -413,23 +536,54 @@ export default function RoteiroPage() {
       </main>
       <footer className="sticky bottom-0 z-10 flex justify-center items-center gap-4 border-t p-4" style={{backgroundColor: '#222E3C'}}>
         <Button
-          variant="secondary"
+          variant="default"
           size="icon"
           className="h-16 w-16 rounded-full shadow-lg"
+          style={{ backgroundColor: '#FFA500' }}
           onClick={handleNewOccurrence}
           aria-label="Nova Ocorrência"
         >
-          <QrCode className="h-10 w-10" />
+          <QrCode className="h-10 w-10 text-black" />
         </Button>
         <Button
-          variant="secondary"
+          variant="default"
           size="icon"
           className="h-16 w-16 rounded-full shadow-lg"
+          style={{ backgroundColor: '#FFA500' }}
           onClick={handleManualEntry}
           aria-label="Entrada Manual"
         >
-          <Edit3 className="h-10 w-10" />
+          <Edit3 className="h-10 w-10 text-black" />
         </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-16 w-16 rounded-full shadow-lg text-black border-white/20 hover:bg-white/10"
+              aria-label="Finalizar Roteiro"
+            >
+              <Send className="h-10 w-10 text-black" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Finalizar Roteiro</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que quer finalizar o roteiro? Esta ação não pode ser desfeita e o roteiro será movido para o histórico.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleFinishRoteiro}
+                className="bg-accent hover:bg-accent/90 text-accent-foreground"
+              >
+                Confirmar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </footer>
     </div>
   );

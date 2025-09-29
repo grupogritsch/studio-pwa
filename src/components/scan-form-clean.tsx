@@ -29,8 +29,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Camera, Loader2, Package, Send, WifiOff, ArrowLeft, X, Trash2 } from 'lucide-react';
+import { Camera, Loader2, Package, Send, WifiOff, Wifi, X, Trash2 } from 'lucide-react';
 import { db, syncService } from '@/lib/db';
+import { apiService } from '@/lib/api';
 
 const formSchema = z.object({
   scannedCode: z.string().optional(),
@@ -113,6 +114,34 @@ export function ScanForm() {
     };
   }, []);
 
+  const getCurrentLocation = (): Promise<{latitude: number, longitude: number}> => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocalização não suportada'));
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.warn('Erro ao obter localização:', error);
+          // Não falhar a operação se GPS não estiver disponível
+          resolve({ latitude: 0, longitude: 0 });
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000
+        }
+      );
+    });
+  };
+
   const saveOccurrence = async (values: z.infer<typeof formSchema>) => {
     if (typeof window === 'undefined') return;
 
@@ -124,6 +153,20 @@ export function ScanForm() {
 
     const timestamp = new Date().toISOString();
 
+    // Obter dados do veículo do localStorage
+    let vehiclePlate = '';
+    let vehicleKm = 0;
+
+    const currentRoteiroData = localStorage.getItem('currentRoteiroData');
+    if (currentRoteiroData) {
+      const data = JSON.parse(currentRoteiroData);
+      vehiclePlate = data.vehiclePlate || '';
+      vehicleKm = data.vehicleKm || 0;
+    }
+
+    // Obter coordenadas GPS
+    const location = await getCurrentLocation();
+
     const occurrenceData = {
         scannedCode: codeToUse,
         occurrence: values.occurrence,
@@ -131,18 +174,46 @@ export function ScanForm() {
         receiverDocument: values.receiverDocument,
         photos: values.photos || [], // Array de paths das fotos
         timestamp,
+        vehiclePlate,
+        vehicleKm,
+        latitude: location.latitude,
+        longitude: location.longitude,
         synced: false,
         needsSync: true // Marcar para sincronização
     };
 
     try {
-        await db.addOccurrence(occurrenceData);
+        console.log('Tentando salvar ocorrência:', occurrenceData);
 
-        toast({
-            title: "Registrado com sucesso",
-            variant: "default",
-            className: "bg-green-500 text-white border-green-600",
-        });
+        // Sempre salvar no IndexedDB primeiro
+        const result = await db.addOccurrence(occurrenceData);
+        console.log('Resultado do salvamento local:', result);
+
+        // Se estiver online, tentar sincronizar imediatamente
+        if (navigator.onLine && !isOffline) {
+          console.log('Online - tentando sincronizar imediatamente...');
+
+          try {
+            const syncResult = await apiService.syncOccurrence(occurrenceData);
+
+            if (syncResult.success) {
+              // Marcar como sincronizado no IndexedDB
+              await db.updateOccurrenceSync(result as number, true);
+              console.log('Ocorrência sincronizada imediatamente com a API');
+
+            } else {
+              console.log('Falha na sincronização imediata:', syncResult.error);
+            }
+          } catch (syncError) {
+            console.error('Erro na sincronização imediata:', syncError);
+          }
+        } else {
+          console.log('Offline - salvando apenas localmente');
+        }
+
+        // Verificar se foi salvo realmente
+        const savedOccurrences = await db.getActiveOccurrences();
+        console.log('Ocorrências ativas após salvamento:', savedOccurrences);
 
         router.push('/roteiro');
     } catch(error) {
@@ -183,19 +254,13 @@ export function ScanForm() {
           const newPhoto = { path: photoPath, preview: result };
           setPhotoPreviews(prev => [...prev, newPhoto]);
 
-          // Atualizar formulário com array de paths
+          // Atualizar formulário com array de data URLs (não paths)
           const currentPhotos = form.getValues('photos') || [];
-          const newPhotos = [...currentPhotos, photoPath];
+          const newPhotos = [...currentPhotos, result]; // Usar data URL em vez do path
           form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
         };
         reader.readAsDataURL(file);
 
-        toast({
-          title: "Foto selecionada",
-          description: `Foto ${photoPreviews.length + 1} salva no dispositivo!`,
-          variant: "default",
-          className: "bg-green-500 text-white border-green-600",
-        });
       } catch (error) {
         console.error('Erro ao processar arquivo:', error);
         toast({
@@ -305,21 +370,15 @@ export function ScanForm() {
                 const newPhoto = { path: photoPath, preview: result };
                 setPhotoPreviews(prev => [...prev, newPhoto]);
 
-                // Atualizar formulário com array de paths
+                // Atualizar formulário com array de data URLs (não paths)
                 const currentPhotos = form.getValues('photos') || [];
-                const newPhotos = [...currentPhotos, photoPath];
+                const newPhotos = [...currentPhotos, result]; // Usar data URL em vez do path
                 form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
               };
               reader.readAsDataURL(blob);
 
               stopCamera();
 
-              toast({
-                title: "Foto capturada",
-                description: `Foto ${photoPreviews.length + 1} salva no dispositivo!`,
-                variant: "default",
-                className: "bg-green-500 text-white border-green-600",
-              });
             } catch (error) {
               console.error('Erro ao salvar foto:', error);
               toast({
@@ -362,8 +421,9 @@ export function ScanForm() {
     const newPhotoPreviews = photoPreviews.filter((_, i) => i !== index);
     setPhotoPreviews(newPhotoPreviews);
 
-    const newPhotoPaths = newPhotoPreviews.map(photo => photo.path);
-    form.setValue('photos', newPhotoPaths, { shouldValidate: true, shouldDirty: true });
+    // Usar data URLs em vez de paths
+    const newPhotoDataUrls = newPhotoPreviews.map(photo => photo.preview);
+    form.setValue('photos', newPhotoDataUrls, { shouldValidate: true, shouldDirty: true });
 
     toast({
       title: "Foto removida",
@@ -429,14 +489,11 @@ export function ScanForm() {
           <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FFA500' }}>K</span>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.push('/roteiro')}
-            className="text-white hover:bg-white/10"
-          >
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
+          {isOffline ? (
+            <WifiOff className="h-5 w-5 text-white" />
+          ) : (
+            <Wifi className="h-5 w-5 text-white" />
+          )}
         </div>
       </header>
       <main className="flex-1 flex flex-col items-center justify-start gap-4 p-4 md:gap-8 md:p-10 w-full pb-24 min-h-0">
@@ -447,7 +504,7 @@ export function ScanForm() {
                 <CardHeader>
                   <div className="flex justify-between items-center">
                     <CardTitle>Registrar Ocorrência</CardTitle>
-                    {isOffline && <WifiOff className="h-5 w-5 text-destructive" />}
+                    {isOffline && <WifiOff className="h-5 w-5 text-white" />}
                   </div>
                   {!isManualMode && codeFromUrl && (
                     <p className="text-sm text-muted-foreground">
@@ -550,13 +607,14 @@ export function ScanForm() {
 
       <footer className="sticky bottom-0 left-0 right-0 z-10 flex justify-center items-center gap-4 border-t p-4 w-full" style={{backgroundColor: '#222E3C'}}>
         <Button
-            variant="outline"
+            variant="default"
             className="h-16 w-16 rounded-full shadow-lg"
+            style={{ backgroundColor: '#FFA500' }}
             disabled={!isCameraEnabled}
             onClick={startCamera}
             aria-label="Tirar Foto"
         >
-            <Camera className="h-10 w-10" />
+            <Camera className="h-10 w-10 text-black" />
         </Button>
 
         <Button
@@ -568,10 +626,19 @@ export function ScanForm() {
             aria-label="Enviar Ocorrência"
         >
             {isPending ? (
-                <Loader2 className="h-10 w-10 animate-spin" />
+                <Loader2 className="h-10 w-10 animate-spin text-black" />
             ) : (
-                <Send className="h-10 w-10" />
+                <Send className="h-10 w-10 text-black" />
             )}
+        </Button>
+
+        <Button
+            variant="outline"
+            className="h-16 w-16 rounded-full shadow-lg text-black border-white/20 hover:bg-white/10"
+            onClick={() => router.push('/roteiro')}
+            aria-label="Fechar"
+        >
+            <X className="h-10 w-10 text-black" />
         </Button>
 
         {/* Input file oculto como fallback */}

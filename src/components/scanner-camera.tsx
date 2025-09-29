@@ -79,7 +79,7 @@ export function ScannerCamera() {
 
       {hasCameraPermission === null && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
-              <Loader2 className="h-10 w-10 animate-spin text-white mb-4" />
+              <Loader2 className="h-10 w-10 animate-spin text-black mb-4" />
               <p className="text-white">Solicitando permissão da câmera...</p>
           </div>
       )}

@@ -2,7 +2,7 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 
 const DB_NAME = 'logistik-db';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const OCCURRENCES_STORE = 'occurrences';
 const OFFLINE_STORE = 'offline_occurrences';
 const ROTEIROS_STORE = 'roteiros';
@@ -21,6 +21,10 @@ interface LogistikDB extends DBSchema {
       synced?: boolean;
       roteiroId?: number;
       needsSync?: boolean; // Flag para indicar que precisa sincronizar
+      vehiclePlate?: string; // Placa do veículo
+      vehicleKm?: number; // Quilometragem do veículo
+      latitude?: number; // Coordenada GPS latitude
+      longitude?: number; // Coordenada GPS longitude
     };
     indexes: { 'timestamp': string; 'roteiroId': number };
   };
@@ -119,17 +123,34 @@ const initDB = async () => {
 export const db = {
   async addOccurrence(occurrence: Omit<LogistikDB['occurrences']['value'], 'id'>) {
     const db = await initDB();
+    console.log('addOccurrence - Dados recebidos:', occurrence);
+
     // Se não tem roteiroId, pega o roteiro ativo do localStorage
     if (!occurrence.roteiroId && typeof window !== 'undefined') {
       const activeRoteiroData = localStorage.getItem('currentRoteiroData');
+      console.log('addOccurrence - Dados do localStorage:', activeRoteiroData);
+
       if (activeRoteiroData) {
         const data = JSON.parse(activeRoteiroData);
+        console.log('addOccurrence - Dados parseados:', data);
+
         if (data.apiRoteiroId) {
           occurrence.roteiroId = data.apiRoteiroId;
+          console.log('addOccurrence - roteiroId atribuído:', data.apiRoteiroId);
+        } else {
+          console.log('addOccurrence - ERRO: apiRoteiroId não encontrado!');
         }
+      } else {
+        console.log('addOccurrence - ERRO: Nenhum roteiro ativo no localStorage!');
       }
+    } else {
+      console.log('addOccurrence - roteiroId já existe:', occurrence.roteiroId);
     }
-    return db.add(OCCURRENCES_STORE, occurrence as any);
+
+    console.log('addOccurrence - Salvando ocorrência final:', occurrence);
+    const result = await db.add(OCCURRENCES_STORE, occurrence as any);
+    console.log('addOccurrence - Resultado do salvamento:', result);
+    return result;
   },
   async addOfflineOccurrence(occurrence: Omit<LogistikDB['offline_occurrences']['value'], 'id'>) {
     const db = await initDB();
@@ -233,19 +254,29 @@ export const db = {
         // Pegar o roteiroId ativo do localStorage
         if (typeof window !== 'undefined') {
           const activeRoteiroData = localStorage.getItem('currentRoteiroData');
+          console.log('Dados do roteiro ativo no localStorage:', activeRoteiroData);
+
           if (activeRoteiroData) {
             const data = JSON.parse(activeRoteiroData);
+            console.log('Dados parseados do roteiro:', data);
+
             if (data.apiRoteiroId) {
+              console.log(`Buscando ocorrências para o roteiro ID: ${data.apiRoteiroId}`);
               // Buscar ocorrências do roteiro ativo - sempre retornar array (pode ser vazio)
               const occurrences = await db.getAllFromIndex(OCCURRENCES_STORE, 'roteiroId', data.apiRoteiroId);
-              console.log(`Ocorrências do roteiro ${data.apiRoteiroId}:`, occurrences);
+              console.log(`Ocorrências encontradas para roteiro ${data.apiRoteiroId}:`, occurrences);
               return occurrences || [];
+            } else {
+              console.log('Roteiro não tem apiRoteiroId');
             }
+          } else {
+            console.log('Nenhum dado de roteiro ativo no localStorage');
           }
         }
 
         // Se não há roteiro ativo no localStorage, retornar array vazio
         // Não buscar ocorrências órfãs para evitar misturar roteiros
+        console.log('Retornando array vazio - sem roteiro ativo');
         return [];
       } catch (error) {
         console.error(`Error getting active occurrences (${4 - retries} attempt):`, error);
@@ -343,36 +374,63 @@ export const syncService = {
   async syncSingleOccurrence(occurrence: any, apiBaseUrl: string): Promise<boolean> {
     try {
       const formData = new FormData();
-      formData.append('scannedCode', occurrence.scannedCode);
-      formData.append('occurrence', occurrence.occurrence);
-      formData.append('timestamp', occurrence.timestamp);
 
+      // Dados obrigatórios para a API Django
+      formData.append('vehicle_plate', occurrence.vehiclePlate || '');
+      formData.append('vehicle_km', occurrence.vehicleKm || '0');
+      formData.append('scanned_code', occurrence.scannedCode);
+      formData.append('occurrence_type', occurrence.occurrence);
+      formData.append('occurrence_datetime', occurrence.timestamp);
+
+      // Dados opcionais
       if (occurrence.receiverName) {
-        formData.append('receiverName', occurrence.receiverName);
+        formData.append('receiver_name', occurrence.receiverName);
       }
       if (occurrence.receiverDocument) {
-        formData.append('receiverDocument', occurrence.receiverDocument);
+        formData.append('receiver_document', occurrence.receiverDocument);
       }
-      if (occurrence.roteiroId) {
-        formData.append('roteiroId', occurrence.roteiroId.toString());
+
+      // Coordenadas GPS (se disponíveis)
+      if (occurrence.latitude) {
+        formData.append('latitude', occurrence.latitude.toString());
+      }
+      if (occurrence.longitude) {
+        formData.append('longitude', occurrence.longitude.toString());
       }
 
       // Anexar fotos se existirem
       if (occurrence.photos && occurrence.photos.length > 0) {
         for (let i = 0; i < occurrence.photos.length; i++) {
           const photoPath = occurrence.photos[i];
-          // Aqui você pode implementar lógica para recuperar a foto do path
-          // Por enquanto, vamos assumir que temos o path
-          formData.append(`photo${i}`, photoPath);
+          try {
+            // Converter data URL em blob se necessário
+            if (photoPath.startsWith('data:')) {
+              const blob = await dataURLtoBlob(photoPath);
+              formData.append('photos', blob, `photo_${i}.jpg`);
+            } else {
+              // Se for um path de arquivo, anexar diretamente
+              formData.append('photos', photoPath);
+            }
+          } catch (photoError) {
+            console.error('Erro ao processar foto:', photoError);
+          }
         }
       }
 
-      const response = await fetch(`${apiBaseUrl}/occurrences`, {
+      const response = await fetch(`${apiBaseUrl}/api/`, {
         method: 'POST',
         body: formData
       });
 
-      return response.ok;
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Ocorrência sincronizada:', result);
+        return true;
+      } else {
+        const error = await response.text();
+        console.error('Erro na API:', error);
+        return false;
+      }
     } catch (error) {
       console.error('Erro ao sincronizar ocorrência individual:', error);
       return false;
