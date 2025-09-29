@@ -34,7 +34,7 @@ export interface SyncResult {
   error?: string;
 }
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'https://logistik-production.up.railway.app/';
 
 export const apiService = {
   async createRoteiro(roteiroData: RoteiroData): Promise<RoteiroResult> {
