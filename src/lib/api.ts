@@ -56,16 +56,26 @@ export const apiService = {
       });
 
       if (response.ok) {
-        const result = await response.json();
-        console.log('Roteiro created with API ID:', result.roteiro_id);
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.indexOf('application/json') !== -1) {
+          const result = await response.json();
+          console.log('Roteiro created with API ID:', result.roteiro_id);
 
-        // Remover a ocorrência inicial que foi criada apenas para criar o roteiro
-        // (isso é uma gambiarra temporária)
+          // Remover a ocorrência inicial que foi criada apenas para criar o roteiro
+          // (isso é uma gambiarra temporária)
 
-        return {
-          success: true,
-          id: result.roteiro_id
-        };
+          return {
+            success: true,
+            id: result.roteiro_id
+          };
+        } else {
+          const errorText = await response.text();
+          console.error('Received non-JSON response:', errorText);
+          return {
+            success: false,
+            error: 'Server returned non-JSON response.'
+          };
+        }
       } else {
         const errorText = await response.text();
         console.error('Erro ao criar roteiro:', errorText);
@@ -78,7 +88,7 @@ export const apiService = {
       console.error('Erro ao criar roteiro:', error);
       return {
         success: false,
-        error: 'Erro de conexão com o servidor'
+        error: error instanceof Error ? error.message : 'Erro de conexão com o servidor'
       };
     }
   },
@@ -179,12 +189,22 @@ export const apiService = {
       console.log('Resposta da API:', response.status, response.statusText);
 
       if (response.ok) {
-        const result = await response.json();
-        console.log('Ocorrência sincronizada com sucesso:', result);
-        return {
-          success: true,
-          id: result.occurrence_id || occurrence.id
-        };
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.indexOf('application/json') !== -1) {
+          const result = await response.json();
+          console.log('Ocorrência sincronizada com sucesso:', result);
+          return {
+            success: true,
+            id: result.occurrence_id || occurrence.id
+          };
+        } else {
+          const errorText = await response.text();
+          console.error('Received non-JSON response:', errorText);
+          return {
+            success: false,
+            error: 'Server returned non-JSON response.'
+          };
+        }
       } else {
         const errorText = await response.text();
         console.error('Erro na API Django:', response.status, errorText);
