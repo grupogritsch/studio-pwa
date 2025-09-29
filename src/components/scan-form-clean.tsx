@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect, useTransition, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Camera, Loader2, Package, Send, WifiOff, ArrowLeft } from 'lucide-react';
+import { Camera, Loader2, Package, Send, WifiOff, ArrowLeft, X } from 'lucide-react';
 import { db } from '@/lib/db';
 
 const formSchema = z.object({
@@ -42,25 +42,11 @@ const formSchema = z.object({
   receiverName: z.string().optional(),
   receiverDocument: z.string().optional(),
 }).superRefine((data, ctx) => {
-    if (data.occurrence === 'entregue') {
-      if (!data.receiverName || data.receiverName.length === 0) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "Nome do recebedor é obrigatório para entrega.",
-            path: ["receiverName"],
-        });
-      }
-      if (!data.receiverDocument || data.receiverDocument.length === 0) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "Documento do recebedor é obrigatório para entrega.",
-            path: ["receiverDocument"],
-        });
-      }
+    if (data.occurrence === 'troca_gelo') {
       if (!data.photo) {
         ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: "Foto é obrigatória para entrega.",
+            message: "Foto é obrigatória para troca de gelo.",
             path: ["photo"],
         });
       }
@@ -77,6 +63,10 @@ export function ScanForm() {
   const codeFromUrl = searchParams.get('code');
   const router = useRouter();
   const [scannedCode, setScannedCode] = useState<string | null>(codeFromUrl);
+  const [showCamera, setShowCamera] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -92,10 +82,9 @@ export function ScanForm() {
   const occurrenceValue = form.watch('occurrence');
   const photoValue = form.watch('photo');
   const isValid = form.formState.isValid;
-  const requiresPhoto = occurrenceValue === 'entregue';
-  const isHoliday = occurrenceValue === 'feriado';
+  const requiresPhoto = occurrenceValue === 'troca_gelo';
   const isCameraEnabled = typeof navigator !== 'undefined' && 'mediaDevices' in navigator;
-  const isSendEnabled = (isHoliday && isValid) || (requiresPhoto && photoValue && isValid);
+  const isSendEnabled = requiresPhoto && photoValue && isValid;
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -171,13 +160,153 @@ export function ScanForm() {
         const result = e.target?.result as string;
         setImagePreview(result);
         form.setValue('photo', result);
+
+        // Salvar a foto no dispositivo
+        savePhotoToDevice(result, file.name);
       };
       reader.readAsDataURL(file);
     }
   };
 
+  const startCamera = async () => {
+    try {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      });
+
+      setStream(mediaStream);
+      setShowCamera(true);
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (error) {
+      console.error('Erro ao acessar câmera:', error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Não foi possível acessar a câmera. Verifique as permissões."
+      });
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setShowCamera(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+
+      if (ctx) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+
+        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+        setImagePreview(imageData);
+        form.setValue('photo', imageData);
+
+        // Salvar a foto no dispositivo
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        savePhotoToDevice(imageData, `ocorrencia_${timestamp}.jpg`);
+
+        stopCamera();
+
+        toast({
+          title: "Foto capturada",
+          description: "Foto salva no dispositivo com sucesso!",
+          variant: "default",
+          className: "bg-green-500 text-white border-green-600",
+        });
+      }
+    }
+  };
+
+  const savePhotoToDevice = (imageData: string, filename: string) => {
+    try {
+      // Criar um elemento 'a' temporário para download
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = imageData;
+
+      // Adicionar ao DOM temporariamente
+      document.body.appendChild(link);
+      link.click();
+
+      // Remover do DOM
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Erro ao salvar foto:', error);
+      toast({
+        variant: "destructive",
+        title: "Aviso",
+        description: "Foto capturada mas não foi possível salvar automaticamente no dispositivo."
+      });
+    }
+  };
+
+  // Limpar stream quando componente for desmontado
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [stream]);
+
   return (
     <div className="flex min-h-screen w-full flex-col">
+      {showCamera && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          <div className="flex justify-between items-center p-4 bg-black/50">
+            <h3 className="text-white text-lg font-semibold">Tirar Foto</h3>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={stopCamera}
+              className="text-white hover:bg-white/10"
+            >
+              <X className="h-6 w-6" />
+            </Button>
+          </div>
+
+          <div className="flex-1 relative overflow-hidden">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+            <canvas ref={canvasRef} className="hidden" />
+          </div>
+
+          <div className="flex justify-center p-6 bg-black/50">
+            <Button
+              onClick={capturePhoto}
+              className="h-16 w-16 rounded-full bg-white hover:bg-gray-200 text-black shadow-lg"
+            >
+              <Camera className="h-8 w-8" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 border-b px-4 shadow-sm md:px-6 w-full" style={{backgroundColor: '#222E3C'}}>
         <div style={{
           fontSize: '32px',
@@ -252,13 +381,7 @@ export function ScanForm() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="entregue">Entregue</SelectItem>
-                            <SelectItem value="avaria">Avaria</SelectItem>
-                            <SelectItem value="extravio">Extravio</SelectItem>
-                            <SelectItem value="devolucao">Devolução</SelectItem>
-                            <SelectItem value="recusado">Recusado</SelectItem>
-                            <SelectItem value="feriado">Feriado</SelectItem>
-                            <SelectItem value="outros">Outros</SelectItem>
+                            <SelectItem value="troca_gelo">Troca de gelo</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -266,36 +389,6 @@ export function ScanForm() {
                     )}
                   />
 
-                  {occurrenceValue === 'entregue' && (
-                    <>
-                      <FormField
-                        control={form.control}
-                        name="receiverName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Nome do Recebedor</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="Digite o nome do recebedor" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="receiverDocument"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Documento do Recebedor</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="CPF, RG ou outro documento" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </>
-                  )}
 
                   {requiresPhoto && (
                     <div className="space-y-4">
@@ -305,14 +398,6 @@ export function ScanForm() {
                           <img src={imagePreview} alt="Preview" className="max-w-full h-auto rounded-lg shadow-sm" />
                         </div>
                       )}
-                      <input
-                        id="photo-upload"
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        capture="environment"
-                        onChange={handleFileChange}
-                        />
                     </div>
                   )}
 
@@ -325,15 +410,13 @@ export function ScanForm() {
 
       <footer className="sticky bottom-0 left-0 right-0 z-10 flex justify-center items-center gap-4 border-t p-4 w-full" style={{backgroundColor: '#222E3C'}}>
         <Button
-            asChild
             variant="outline"
             className="h-16 w-16 rounded-full shadow-lg"
             disabled={!isCameraEnabled}
+            onClick={startCamera}
             aria-label="Tirar Foto"
         >
-            <label htmlFor="photo-upload" className={`cursor-${isCameraEnabled ? 'pointer' : 'not-allowed'}`}>
-                <Camera className="h-10 w-10" />
-            </label>
+            <Camera className="h-10 w-10" />
         </Button>
 
         <Button
@@ -350,6 +433,16 @@ export function ScanForm() {
                 <Send className="h-10 w-10" />
             )}
         </Button>
+
+        {/* Input file oculto como fallback */}
+        <input
+          id="photo-upload"
+          type="file"
+          accept="image/*"
+          className="hidden"
+          capture="environment"
+          onChange={handleFileChange}
+        />
       </footer>
     </div>
     );
