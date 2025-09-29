@@ -29,32 +29,29 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Camera, Loader2, Package, Send, WifiOff, ArrowLeft, X } from 'lucide-react';
+import { Camera, Loader2, Package, Send, WifiOff, ArrowLeft, X, Trash2 } from 'lucide-react';
 import { db } from '@/lib/db';
 
 const formSchema = z.object({
   scannedCode: z.string().optional(),
   occurrence: z.string({ required_error: "Selecione uma ocorrência." }).min(1, "Selecione uma ocorrência."),
-  photo: z.union([
-    z.string().min(1, "Foto é obrigatória.").optional(),
-    z.instanceof(Blob).optional(),
-  ]),
+  photos: z.array(z.string()).default([]),
   receiverName: z.string().optional(),
   receiverDocument: z.string().optional(),
 }).superRefine((data, ctx) => {
     if (data.occurrence === 'troca_gelo') {
-      if (!data.photo) {
+      if (!data.photos || data.photos.length === 0) {
         ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: "Foto é obrigatória para troca de gelo.",
-            path: ["photo"],
+            message: "Pelo menos uma foto é obrigatória para troca de gelo.",
+            path: ["photos"],
         });
       }
     }
   });
 
 export function ScanForm() {
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [photoPreviews, setPhotoPreviews] = useState<Array<{path: string, preview: string}>>([]);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const [isOffline, setIsOffline] = useState(false);
@@ -73,6 +70,7 @@ export function ScanForm() {
     defaultValues: {
       scannedCode: codeFromUrl || '',
       occurrence: '',
+      photos: [],
       receiverName: '',
       receiverDocument: '',
     },
@@ -80,11 +78,11 @@ export function ScanForm() {
   });
 
   const occurrenceValue = form.watch('occurrence');
-  const photoValue = form.watch('photo');
+  const photosValue = form.watch('photos');
   const isValid = form.formState.isValid;
   const requiresPhoto = occurrenceValue === 'troca_gelo';
   const isCameraEnabled = typeof navigator !== 'undefined' && 'mediaDevices' in navigator;
-  const isSendEnabled = requiresPhoto && photoValue && isValid;
+  const isSendEnabled = requiresPhoto && photosValue && photosValue.length > 0 && isValid;
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -163,16 +161,20 @@ export function ScanForm() {
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result as string;
-          setImagePreview(result);
 
-          // Salvar apenas o path da foto no formulário para o IndexDB
-          form.setValue('photo', photoPath);
+          // Adicionar à lista de fotos
+          const newPhoto = { path: photoPath, preview: result };
+          setPhotoPreviews(prev => [...prev, newPhoto]);
+
+          // Atualizar formulário com array de paths
+          const currentPhotos = form.getValues('photos') || [];
+          form.setValue('photos', [...currentPhotos, photoPath]);
         };
         reader.readAsDataURL(file);
 
         toast({
           title: "Foto selecionada",
-          description: "Foto salva no dispositivo com sucesso!",
+          description: `Foto ${photoPreviews.length + 1} salva no dispositivo!`,
           variant: "default",
           className: "bg-green-500 text-white border-green-600",
         });
@@ -273,17 +275,21 @@ export function ScanForm() {
             const filename = `ocorrencia_${timestamp}.jpg`;
 
             try {
-              // Salvar foto usando File System Access API (se disponível) ou fallback
+              // Salvar foto automaticamente
               const photoPath = await savePhotoToDevice(blob, filename);
 
               // Converter para base64 para preview
               const reader = new FileReader();
               reader.onload = (e) => {
                 const result = e.target?.result as string;
-                setImagePreview(result);
 
-                // Salvar apenas o path da foto no formulário para o IndexDB
-                form.setValue('photo', photoPath);
+                // Adicionar à lista de fotos
+                const newPhoto = { path: photoPath, preview: result };
+                setPhotoPreviews(prev => [...prev, newPhoto]);
+
+                // Atualizar formulário com array de paths
+                const currentPhotos = form.getValues('photos') || [];
+                form.setValue('photos', [...currentPhotos, photoPath]);
               };
               reader.readAsDataURL(blob);
 
@@ -291,7 +297,7 @@ export function ScanForm() {
 
               toast({
                 title: "Foto capturada",
-                description: "Foto salva no dispositivo com sucesso!",
+                description: `Foto ${photoPreviews.length + 1} salva no dispositivo!`,
                 variant: "default",
                 className: "bg-green-500 text-white border-green-600",
               });
@@ -311,49 +317,40 @@ export function ScanForm() {
 
   const savePhotoToDevice = async (blob: Blob, filename: string): Promise<string> => {
     try {
-      // Verificar se File System Access API está disponível
-      if ('showSaveFilePicker' in window) {
-        try {
-          const fileHandle = await (window as any).showSaveFilePicker({
-            suggestedName: filename,
-            types: [{
-              description: 'Imagens JPEG',
-              accept: { 'image/jpeg': ['.jpg', '.jpeg'] }
-            }]
-          });
+      // Salvar automaticamente usando download - sem diálogo
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = url;
+      link.style.display = 'none';
 
-          const writable = await fileHandle.createWritable();
-          await writable.write(blob);
-          await writable.close();
+      // Adicionar ao DOM temporariamente
+      document.body.appendChild(link);
+      link.click();
 
-          return fileHandle.name; // Retorna o nome do arquivo salvo
-        } catch (err) {
-          if (err.name === 'AbortError') {
-            throw new Error('Usuário cancelou o salvamento');
-          }
-          throw err;
-        }
-      } else {
-        // Fallback: usar download automático
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = filename;
-        link.href = url;
+      // Limpar
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
 
-        // Adicionar ao DOM temporariamente
-        document.body.appendChild(link);
-        link.click();
-
-        // Limpar
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-
-        return filename; // Retorna o nome do arquivo
-      }
+      return filename; // Retorna o nome do arquivo
     } catch (error) {
       console.error('Erro ao salvar foto:', error);
       throw error;
     }
+  };
+
+  const removePhoto = (index: number) => {
+    const newPhotoPreviews = photoPreviews.filter((_, i) => i !== index);
+    setPhotoPreviews(newPhotoPreviews);
+
+    const newPhotoPaths = newPhotoPreviews.map(photo => photo.path);
+    form.setValue('photos', newPhotoPaths);
+
+    toast({
+      title: "Foto removida",
+      description: "Foto removida da lista.",
+      variant: "default",
+    });
   };
 
   // Limpar stream quando componente for desmontado
@@ -488,10 +485,37 @@ export function ScanForm() {
 
                   {requiresPhoto && (
                     <div className="space-y-4">
-                      <FormLabel>Foto Comprobatória</FormLabel>
-                      {imagePreview && (
-                        <div className="mt-4">
-                          <img src={imagePreview} alt="Preview" className="max-w-full h-auto rounded-lg shadow-sm" />
+                      <FormLabel>Fotos Comprobatórias ({photoPreviews.length})</FormLabel>
+                      {photoPreviews.length > 0 && (
+                        <div className="grid grid-cols-2 gap-4 mt-4">
+                          {photoPreviews.map((photo, index) => (
+                            <div key={index} className="relative">
+                              <img
+                                src={photo.preview}
+                                alt={`Foto ${index + 1}`}
+                                className="w-full h-32 object-cover rounded-lg shadow-sm border"
+                              />
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="icon"
+                                className="absolute top-1 right-1 h-6 w-6 rounded-full"
+                                onClick={() => removePhoto(index)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                              <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-1 rounded">
+                                {index + 1}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {photoPreviews.length === 0 && (
+                        <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+                          <Camera className="mx-auto h-12 w-12 mb-2" />
+                          <p>Nenhuma foto anexada</p>
+                          <p className="text-sm">Clique no botão da câmera para tirar fotos</p>
                         </div>
                       )}
                     </div>
