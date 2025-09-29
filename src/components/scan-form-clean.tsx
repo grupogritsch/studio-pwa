@@ -152,19 +152,38 @@ export function ScanForm() {
     });
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const result = e.target?.result as string;
-        setImagePreview(result);
-        form.setValue('photo', result);
+      try {
+        // Salvar o arquivo no dispositivo
+        const photoPath = await savePhotoToDevice(file, file.name);
 
-        // Salvar a foto no dispositivo
-        savePhotoToDevice(result, file.name);
-      };
-      reader.readAsDataURL(file);
+        // Converter para base64 para preview
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result as string;
+          setImagePreview(result);
+
+          // Salvar apenas o path da foto no formulário para o IndexDB
+          form.setValue('photo', photoPath);
+        };
+        reader.readAsDataURL(file);
+
+        toast({
+          title: "Foto selecionada",
+          description: "Foto salva no dispositivo com sucesso!",
+          variant: "default",
+          className: "bg-green-500 text-white border-green-600",
+        });
+      } catch (error) {
+        console.error('Erro ao processar arquivo:', error);
+        toast({
+          variant: "destructive",
+          title: "Erro",
+          description: "Erro ao processar a foto selecionada."
+        });
+      }
     }
   };
 
@@ -174,26 +193,56 @@ export function ScanForm() {
         stream.getTracks().forEach(track => track.stop());
       }
 
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
+      // Verificar se getUserMedia está disponível
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('getUserMedia não suportado neste navegador');
+      }
+
+      const constraints = {
         video: {
-          facingMode: 'environment',
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
-      });
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 }
+        },
+        audio: false
+      };
+
+      console.log('Solicitando acesso à câmera...');
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('Câmera acessada com sucesso');
 
       setStream(mediaStream);
       setShowCamera(true);
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
+      // Aguardar um pouco antes de definir o stream no vídeo
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+          videoRef.current.play().catch(err => {
+            console.error('Erro ao reproduzir vídeo:', err);
+          });
+        }
+      }, 100);
+
     } catch (error) {
       console.error('Erro ao acessar câmera:', error);
+
+      let errorMessage = "Não foi possível acessar a câmera.";
+
+      if (error.name === 'NotAllowedError') {
+        errorMessage = "Permissão negada. Permita o acesso à câmera nas configurações do navegador.";
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = "Nenhuma câmera encontrada no dispositivo.";
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage = "Câmera não suportada neste navegador.";
+      } else if (error.name === 'NotReadableError') {
+        errorMessage = "Câmera está sendo usada por outro aplicativo.";
+      }
+
       toast({
         variant: "destructive",
-        title: "Erro",
-        description: "Não foi possível acessar a câmera. Verifique as permissões."
+        title: "Erro na Câmera",
+        description: errorMessage
       });
     }
   };
@@ -206,7 +255,7 @@ export function ScanForm() {
     setShowCamera(false);
   };
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -217,46 +266,93 @@ export function ScanForm() {
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0);
 
-        const imageData = canvas.toDataURL('image/jpeg', 0.8);
-        setImagePreview(imageData);
-        form.setValue('photo', imageData);
+        // Converter para blob para salvar como arquivo real
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `ocorrencia_${timestamp}.jpg`;
 
-        // Salvar a foto no dispositivo
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        savePhotoToDevice(imageData, `ocorrencia_${timestamp}.jpg`);
+            try {
+              // Salvar foto usando File System Access API (se disponível) ou fallback
+              const photoPath = await savePhotoToDevice(blob, filename);
 
-        stopCamera();
+              // Converter para base64 para preview
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                const result = e.target?.result as string;
+                setImagePreview(result);
 
-        toast({
-          title: "Foto capturada",
-          description: "Foto salva no dispositivo com sucesso!",
-          variant: "default",
-          className: "bg-green-500 text-white border-green-600",
-        });
+                // Salvar apenas o path da foto no formulário para o IndexDB
+                form.setValue('photo', photoPath);
+              };
+              reader.readAsDataURL(blob);
+
+              stopCamera();
+
+              toast({
+                title: "Foto capturada",
+                description: "Foto salva no dispositivo com sucesso!",
+                variant: "default",
+                className: "bg-green-500 text-white border-green-600",
+              });
+            } catch (error) {
+              console.error('Erro ao salvar foto:', error);
+              toast({
+                variant: "destructive",
+                title: "Erro",
+                description: "Erro ao salvar foto no dispositivo."
+              });
+            }
+          }
+        }, 'image/jpeg', 0.8);
       }
     }
   };
 
-  const savePhotoToDevice = (imageData: string, filename: string) => {
+  const savePhotoToDevice = async (blob: Blob, filename: string): Promise<string> => {
     try {
-      // Criar um elemento 'a' temporário para download
-      const link = document.createElement('a');
-      link.download = filename;
-      link.href = imageData;
+      // Verificar se File System Access API está disponível
+      if ('showSaveFilePicker' in window) {
+        try {
+          const fileHandle = await (window as any).showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: 'Imagens JPEG',
+              accept: { 'image/jpeg': ['.jpg', '.jpeg'] }
+            }]
+          });
 
-      // Adicionar ao DOM temporariamente
-      document.body.appendChild(link);
-      link.click();
+          const writable = await fileHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
 
-      // Remover do DOM
-      document.body.removeChild(link);
+          return fileHandle.name; // Retorna o nome do arquivo salvo
+        } catch (err) {
+          if (err.name === 'AbortError') {
+            throw new Error('Usuário cancelou o salvamento');
+          }
+          throw err;
+        }
+      } else {
+        // Fallback: usar download automático
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = url;
+
+        // Adicionar ao DOM temporariamente
+        document.body.appendChild(link);
+        link.click();
+
+        // Limpar
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        return filename; // Retorna o nome do arquivo
+      }
     } catch (error) {
       console.error('Erro ao salvar foto:', error);
-      toast({
-        variant: "destructive",
-        title: "Aviso",
-        description: "Foto capturada mas não foi possível salvar automaticamente no dispositivo."
-      });
+      throw error;
     }
   };
 
