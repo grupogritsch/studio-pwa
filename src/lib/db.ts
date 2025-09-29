@@ -2,7 +2,7 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 
 const DB_NAME = 'logistik-db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const OCCURRENCES_STORE = 'occurrences';
 const OFFLINE_STORE = 'offline_occurrences';
 const ROTEIROS_STORE = 'roteiros';
@@ -17,8 +17,10 @@ interface LogistikDB extends DBSchema {
       timestamp: string;
       receiverName?: string;
       receiverDocument?: string;
+      photos?: string[]; // Array de paths das fotos
       synced?: boolean;
       roteiroId?: number;
+      needsSync?: boolean; // Flag para indicar que precisa sincronizar
     };
     indexes: { 'timestamp': string; 'roteiroId': number };
   };
@@ -273,3 +275,125 @@ export async function dataURLtoBlob(dataurl: string): Promise<Blob> {
     const res = await fetch(dataurl);
     return await res.blob();
 }
+
+// Funções para sincronização offline
+export const syncService = {
+  async markForSync(occurrenceId: number) {
+    const database = await initDB();
+    const occurrence = await database.get(OCCURRENCES_STORE, occurrenceId);
+    if (occurrence) {
+      occurrence.needsSync = true;
+      occurrence.synced = false;
+      await database.put(OCCURRENCES_STORE, occurrence);
+    }
+  },
+
+  async getUnsyncedData() {
+    const database = await initDB();
+    const occurrences = await database.getAll(OCCURRENCES_STORE);
+    return occurrences.filter(occ => occ.needsSync || !occ.synced);
+  },
+
+  async isOnline(): Promise<boolean> {
+    if (typeof navigator === 'undefined') return false;
+    return navigator.onLine;
+  },
+
+  async syncAllData(apiBaseUrl: string) {
+    if (!await this.isOnline()) {
+      console.log('Dispositivo offline, sincronização cancelada');
+      return { success: false, message: 'Dispositivo offline' };
+    }
+
+    try {
+      const unsyncedData = await this.getUnsyncedData();
+      console.log(`Sincronizando ${unsyncedData.length} itens...`);
+
+      let syncedCount = 0;
+      let errorCount = 0;
+
+      for (const occurrence of unsyncedData) {
+        try {
+          const success = await this.syncSingleOccurrence(occurrence, apiBaseUrl);
+          if (success) {
+            // Marcar como sincronizado no banco local
+            await db.updateOccurrenceSync(occurrence.id, true);
+            syncedCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (error) {
+          console.error('Erro ao sincronizar ocorrência:', error);
+          errorCount++;
+        }
+      }
+
+      return {
+        success: errorCount === 0,
+        message: `Sincronizados: ${syncedCount}, Erros: ${errorCount}`,
+        syncedCount,
+        errorCount
+      };
+    } catch (error) {
+      console.error('Erro durante sincronização:', error);
+      return { success: false, message: 'Erro durante sincronização' };
+    }
+  },
+
+  async syncSingleOccurrence(occurrence: any, apiBaseUrl: string): Promise<boolean> {
+    try {
+      const formData = new FormData();
+      formData.append('scannedCode', occurrence.scannedCode);
+      formData.append('occurrence', occurrence.occurrence);
+      formData.append('timestamp', occurrence.timestamp);
+
+      if (occurrence.receiverName) {
+        formData.append('receiverName', occurrence.receiverName);
+      }
+      if (occurrence.receiverDocument) {
+        formData.append('receiverDocument', occurrence.receiverDocument);
+      }
+      if (occurrence.roteiroId) {
+        formData.append('roteiroId', occurrence.roteiroId.toString());
+      }
+
+      // Anexar fotos se existirem
+      if (occurrence.photos && occurrence.photos.length > 0) {
+        for (let i = 0; i < occurrence.photos.length; i++) {
+          const photoPath = occurrence.photos[i];
+          // Aqui você pode implementar lógica para recuperar a foto do path
+          // Por enquanto, vamos assumir que temos o path
+          formData.append(`photo${i}`, photoPath);
+        }
+      }
+
+      const response = await fetch(`${apiBaseUrl}/occurrences`, {
+        method: 'POST',
+        body: formData
+      });
+
+      return response.ok;
+    } catch (error) {
+      console.error('Erro ao sincronizar ocorrência individual:', error);
+      return false;
+    }
+  },
+
+  async startBackgroundSync() {
+    // Verificar se está online a cada 30 segundos
+    setInterval(async () => {
+      if (await this.isOnline()) {
+        const unsyncedCount = (await this.getUnsyncedData()).length;
+        if (unsyncedCount > 0) {
+          console.log(`${unsyncedCount} itens precisam ser sincronizados`);
+          // Notificar usuário que existem dados para sincronizar
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('unsyncedData', {
+              detail: { count: unsyncedCount }
+            }));
+          }
+        }
+      }
+    }, 30000);
+  }
+};

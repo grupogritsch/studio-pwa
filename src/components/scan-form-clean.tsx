@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Camera, Loader2, Package, Send, WifiOff, ArrowLeft, X, Trash2 } from 'lucide-react';
-import { db } from '@/lib/db';
+import { db, syncService } from '@/lib/db';
 
 const formSchema = z.object({
   scannedCode: z.string().optional(),
@@ -129,8 +129,10 @@ export function ScanForm() {
         occurrence: values.occurrence,
         receiverName: values.receiverName,
         receiverDocument: values.receiverDocument,
+        photos: values.photos || [], // Array de paths das fotos
         timestamp,
-        synced: false
+        synced: false,
+        needsSync: true // Marcar para sincronização
     };
 
     try {

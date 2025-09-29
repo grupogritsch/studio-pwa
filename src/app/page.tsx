@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SyncStatus } from '@/components/sync-status';
 
 type Roteiro = {
   id: number;
@@ -318,7 +319,12 @@ export default function Home() {
       </header>
 
       <main className="flex flex-1 flex-col items-center p-4 text-center pb-24">
-        <div className="w-full max-w-2xl mt-8 space-y-6">
+        {/* Status de Sincronização */}
+        <div className="w-full max-w-2xl mt-4 mb-6">
+          <SyncStatus />
+        </div>
+
+        <div className="w-full max-w-2xl space-y-6">
           {/* Roteiro ativo */}
           {activeRoteiro && (
             <div className="space-y-4">
