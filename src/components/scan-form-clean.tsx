@@ -82,7 +82,22 @@ export function ScanForm() {
   const isValid = form.formState.isValid;
   const requiresPhoto = occurrenceValue === 'troca_gelo';
   const isCameraEnabled = typeof navigator !== 'undefined' && 'mediaDevices' in navigator;
-  const isSendEnabled = requiresPhoto && photosValue && photosValue.length > 0 && isValid;
+
+  // Lógica simplificada - usar tanto photosValue quanto photoPreviews para garantir
+  const hasPhotos = (photosValue && photosValue.length > 0) || photoPreviews.length > 0;
+  const isSendEnabled = requiresPhoto && hasPhotos && occurrenceValue;
+
+  // Debug logs
+  console.log('Debug - Send button state:', {
+    requiresPhoto,
+    hasPhotos,
+    photosValue,
+    photosValueLength: photosValue?.length,
+    photoPreviewsLength: photoPreviews.length,
+    occurrenceValue,
+    isValid,
+    isSendEnabled
+  });
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -168,7 +183,8 @@ export function ScanForm() {
 
           // Atualizar formulário com array de paths
           const currentPhotos = form.getValues('photos') || [];
-          form.setValue('photos', [...currentPhotos, photoPath]);
+          const newPhotos = [...currentPhotos, photoPath];
+          form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
         };
         reader.readAsDataURL(file);
 
@@ -289,7 +305,8 @@ export function ScanForm() {
 
                 // Atualizar formulário com array de paths
                 const currentPhotos = form.getValues('photos') || [];
-                form.setValue('photos', [...currentPhotos, photoPath]);
+                const newPhotos = [...currentPhotos, photoPath];
+                form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
               };
               reader.readAsDataURL(blob);
 
@@ -344,7 +361,7 @@ export function ScanForm() {
     setPhotoPreviews(newPhotoPreviews);
 
     const newPhotoPaths = newPhotoPreviews.map(photo => photo.path);
-    form.setValue('photos', newPhotoPaths);
+    form.setValue('photos', newPhotoPaths, { shouldValidate: true, shouldDirty: true });
 
     toast({
       title: "Foto removida",
