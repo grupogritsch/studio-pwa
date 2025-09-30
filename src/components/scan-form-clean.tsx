@@ -247,7 +247,7 @@ export function ScanForm() {
         const r2Url = await uploadPhotoToR2(file, file.name);
 
         // Comprimir para preview local (não armazenar no IndexedDB)
-        const compressedBase64 = await compressImage(file, 0.5, 800, 600); // Preview menor
+        const compressedBase64 = await compressImage(file, 0.7, 1280, 720); // Preview melhor qualidade
 
         // Adicionar à lista de fotos
         const newPhoto = { path: r2Url, preview: compressedBase64 };
@@ -359,7 +359,7 @@ export function ScanForm() {
               const r2Url = await uploadPhotoToR2(blob, filename);
 
               // Comprimir para preview local (não armazenar no IndexedDB)
-              const compressedBase64 = await compressImage(blob, 0.5, 800, 600); // Preview menor
+              const compressedBase64 = await compressImage(blob, 0.7, 1280, 720); // Preview melhor qualidade
 
               // Adicionar à lista de fotos
               const newPhoto = { path: r2Url, preview: compressedBase64 };
@@ -386,7 +386,7 @@ export function ScanForm() {
     }
   };
 
-  const compressImage = async (blob: Blob, quality: number = 0.7, maxWidth: number = 1280, maxHeight: number = 720): Promise<string> => {
+  const compressImage = async (blob: Blob, quality: number = 0.85, maxWidth: number = 1920, maxHeight: number = 1080): Promise<string> => {
     return new Promise((resolve, reject) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
@@ -421,7 +421,7 @@ export function ScanForm() {
   const uploadPhotoToR2 = async (blob: Blob, filename: string): Promise<string> => {
     try {
       // Comprimir imagem antes do upload
-      const compressedBase64 = await compressImage(blob, 0.7, 1280, 720);
+      const compressedBase64 = await compressImage(blob, 0.85, 1920, 1080);
 
       console.log(`Uploading photo: ${filename}`);
       console.log(`Original size: ${(blob.size / 1024).toFixed(2)}KB`);
