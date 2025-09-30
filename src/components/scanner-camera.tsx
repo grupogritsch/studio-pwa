@@ -39,6 +39,9 @@ export function ScannerCamera() {
   useEffect(() => {
     const getCameraPermission = async () => {
       try {
+        console.log('Solicitando acesso à câmera...');
+        console.log('Navigator online:', navigator.onLine);
+
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: 'environment',
@@ -46,6 +49,8 @@ export function ScannerCamera() {
             height: { ideal: 1080 }
           }
         });
+
+        console.log('Câmera acessada com sucesso!');
         setHasCameraPermission(true);
 
         if (videoRef.current) {
@@ -73,9 +78,21 @@ export function ScannerCamera() {
             }
           }, 1000);
         }
-      } catch (error) {
-        console.error('Error accessing camera:', error);
-        setHasCameraPermission(false);
+      } catch (error: any) {
+        console.error('Erro ao acessar câmera:', error);
+        console.error('Tipo de erro:', error.name);
+        console.error('Mensagem:', error.message);
+        console.error('Navigator online:', navigator.onLine);
+
+        // Só definir como erro de permissão se realmente for erro de permissão
+        // Não bloquear por causa de estar offline
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          setHasCameraPermission(false);
+        } else {
+          // Para outros erros, tentar novamente
+          console.log('Erro não é de permissão, tentando novamente...');
+          setTimeout(() => getCameraPermission(), 2000);
+        }
       }
     };
 
