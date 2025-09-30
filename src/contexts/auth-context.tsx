@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { getApiUrl, API_CONFIG } from "@/lib/config";
 
 interface User {
   id: number;
@@ -56,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      const response = await fetch("http://localhost:8000/auth/api/verify/", {
+      const response = await fetch(getApiUrl(API_CONFIG.endpoints.verify), {
         method: "GET",
         credentials: "include",
       });
@@ -86,7 +87,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      const response = await fetch("http://localhost:8000/auth/api/login/", {
+      console.log("Attempting login with:", { username, url: getApiUrl(API_CONFIG.endpoints.login) });
+
+      const response = await fetch(getApiUrl(API_CONFIG.endpoints.login), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -95,14 +98,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: "include",
       });
 
+      console.log("Login response status:", response.status);
+      console.log("Login response headers:", Object.fromEntries(response.headers.entries()));
+
       const data = await response.json();
+      console.log("Login response data:", data);
 
       if (data.success) {
         setUser(data.user);
         localStorage.setItem("user", JSON.stringify(data.user));
         localStorage.setItem("session_key", data.session_key);
+        console.log("Login successful");
         return true;
       } else {
+        console.log("Login failed:", data.message);
         return false;
       }
     } catch (error) {
@@ -116,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isAuthenticated) return;
 
     try {
-      await fetch("http://localhost:8000/auth/api/verify/", {
+      await fetch(getApiUrl(API_CONFIG.endpoints.verify), {
         method: "GET",
         credentials: "include",
       });
@@ -161,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     sessionCheckIntervalRef.current = setInterval(async () => {
       try {
-        const response = await fetch("http://localhost:8000/auth/api/verify/", {
+        const response = await fetch(getApiUrl(API_CONFIG.endpoints.verify), {
           method: "GET",
           credentials: "include",
         });
@@ -180,7 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch("http://localhost:8000/auth/api/logout/", {
+      await fetch(getApiUrl(API_CONFIG.endpoints.logout), {
         method: "POST",
         credentials: "include",
       });
