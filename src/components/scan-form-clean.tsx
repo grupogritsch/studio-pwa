@@ -242,24 +242,17 @@ export function ScanForm() {
     const file = event.target.files?.[0];
     if (file) {
       try {
-        // Salvar o arquivo no dispositivo
-        const photoPath = await savePhotoToDevice(file, file.name);
+        // Comprimir e salvar no IndexedDB
+        const compressedBase64 = await savePhotoToIndexedDB(file, file.name);
 
-        // Converter para base64 para preview
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const result = e.target?.result as string;
+        // Adicionar à lista de fotos
+        const newPhoto = { path: file.name, preview: compressedBase64 };
+        setPhotoPreviews(prev => [...prev, newPhoto]);
 
-          // Adicionar à lista de fotos
-          const newPhoto = { path: photoPath, preview: result };
-          setPhotoPreviews(prev => [...prev, newPhoto]);
-
-          // Atualizar formulário com array de data URLs (não paths)
-          const currentPhotos = form.getValues('photos') || [];
-          const newPhotos = [...currentPhotos, result]; // Usar data URL em vez do path
-          form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
-        };
-        reader.readAsDataURL(file);
+        // Atualizar formulário com array de base64 comprimidos
+        const currentPhotos = form.getValues('photos') || [];
+        const newPhotos = [...currentPhotos, compressedBase64];
+        form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
 
       } catch (error) {
         console.error('Erro ao processar arquivo:', error);
@@ -358,24 +351,17 @@ export function ScanForm() {
             const filename = `ocorrencia_${timestamp}.jpg`;
 
             try {
-              // Salvar foto automaticamente
-              const photoPath = await savePhotoToDevice(blob, filename);
+              // Comprimir e salvar no IndexedDB
+              const compressedBase64 = await savePhotoToIndexedDB(blob, filename);
 
-              // Converter para base64 para preview
-              const reader = new FileReader();
-              reader.onload = (e) => {
-                const result = e.target?.result as string;
+              // Adicionar à lista de fotos
+              const newPhoto = { path: filename, preview: compressedBase64 };
+              setPhotoPreviews(prev => [...prev, newPhoto]);
 
-                // Adicionar à lista de fotos
-                const newPhoto = { path: photoPath, preview: result };
-                setPhotoPreviews(prev => [...prev, newPhoto]);
-
-                // Atualizar formulário com array de data URLs (não paths)
-                const currentPhotos = form.getValues('photos') || [];
-                const newPhotos = [...currentPhotos, result]; // Usar data URL em vez do path
-                form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
-              };
-              reader.readAsDataURL(blob);
+              // Atualizar formulário com array de base64 comprimidos
+              const currentPhotos = form.getValues('photos') || [];
+              const newPhotos = [...currentPhotos, compressedBase64];
+              form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
 
               stopCamera();
 
@@ -393,26 +379,50 @@ export function ScanForm() {
     }
   };
 
-  const savePhotoToDevice = async (blob: Blob, filename: string): Promise<string> => {
+  const compressImage = async (blob: Blob, quality: number = 0.7, maxWidth: number = 1280, maxHeight: number = 720): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+
+      img.onload = () => {
+        // Calcular novas dimensões mantendo proporção
+        let { width, height } = img;
+
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width *= ratio;
+          height *= ratio;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        // Desenhar imagem redimensionada
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // Converter para base64 comprimido
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedDataUrl);
+      };
+
+      img.onerror = () => reject(new Error('Erro ao carregar imagem para compressão'));
+      img.src = URL.createObjectURL(blob);
+    });
+  };
+
+  const savePhotoToIndexedDB = async (blob: Blob, filename: string): Promise<string> => {
     try {
-      // Salvar automaticamente usando download - sem diálogo
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.download = filename;
-      link.href = url;
-      link.style.display = 'none';
+      // Comprimir imagem antes de armazenar
+      const compressedBase64 = await compressImage(blob, 0.7, 1280, 720);
 
-      // Adicionar ao DOM temporariamente
-      document.body.appendChild(link);
-      link.click();
+      console.log(`Foto comprimida: ${filename}`);
+      console.log(`Tamanho original: ${(blob.size / 1024).toFixed(2)}KB`);
+      console.log(`Tamanho comprimido: ${(compressedBase64.length * 0.75 / 1024).toFixed(2)}KB`);
 
-      // Limpar
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      return filename; // Retorna o nome do arquivo
+      return compressedBase64; // Retorna o base64 comprimido
     } catch (error) {
-      console.error('Erro ao salvar foto:', error);
+      console.error('Erro ao comprimir/salvar foto:', error);
       throw error;
     }
   };

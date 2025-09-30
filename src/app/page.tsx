@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import AuthGuard from '@/components/auth-guard';
 import { useAuth } from '@/contexts/auth-context';
 import { WifiOff, Wifi, Check, Loader2, Menu, X } from 'lucide-react';
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { db } from '@/lib/db';
@@ -307,14 +308,21 @@ export default function Home() {
   return (
     <AuthGuard>
       <div className="flex min-h-screen w-full flex-col bg-secondary">
-      <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 border-b px-4 shadow-sm md:px-6" style={{backgroundColor: '#222E3C'}}>
-        <div style={{
-          fontSize: '32px',
-          fontWeight: 'bold',
-          fontFamily: 'Roboto Bold',
-          letterSpacing: '1px',
-        }}>
-          <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FFA500' }}>K</span>
+      <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 px-4 shadow-sm md:px-6" style={{backgroundColor: '#222E3C'}}>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-2 text-white hover:bg-white/10 rounded transition-colors"
+          >
+            <Menu className="h-8 w-8" />
+          </button>
+          <Image
+            src="/logistik-dark.png"
+            alt="Logistik"
+            width={140}
+            height={32}
+            priority
+          />
         </div>
         <div className="flex items-center gap-2">
           {!isOnline ? (
@@ -322,12 +330,6 @@ export default function Home() {
           ) : (
             <Wifi className="h-5 w-5 text-white" />
           )}
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="p-2 text-white hover:bg-white/10 rounded transition-colors"
-          >
-            <Menu className="h-6 w-6" />
-          </button>
         </div>
       </header>
 
@@ -482,7 +484,7 @@ export default function Home() {
       </Dialog>
 
       {/* Sidebar */}
-      <div className="fixed inset-0 z-50 flex pointer-events-none">
+      <div className="fixed inset-0 z-50 flex pointer-events-none" style={{top: '80px'}}>
         {/* Overlay */}
         <div
           className={`absolute inset-0 bg-black transition-opacity duration-300 ease-in-out ${
@@ -493,28 +495,18 @@ export default function Home() {
 
         {/* Sidebar */}
         <div
-          className={`relative ml-auto w-80 h-full shadow-xl transition-transform duration-300 ease-in-out pointer-events-auto ${
-            isSidebarOpen ? 'translate-x-0' : 'translate-x-full'
+          className={`relative mr-auto w-80 shadow-xl transition-transform duration-300 ease-in-out pointer-events-auto ${
+            isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
-          style={{backgroundColor: '#222E3C'}}
+          style={{backgroundColor: '#222E3C', height: 'calc(100vh - 80px)'}}
         >
           <div className="flex flex-col h-full p-6">
-            {/* Close Button */}
-            <div className="flex justify-end mb-4">
-              <button
-                onClick={() => setIsSidebarOpen(false)}
-                className="p-2 text-white hover:bg-white/10 rounded transition-colors"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-
             {/* User Info */}
             {user && (
               <div className="mb-8">
                 <div className="flex items-center gap-4">
                   {/* Initials Circle */}
-                  <div className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl" style={{backgroundColor: '#FFA500'}}>
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg" style={{backgroundColor: '#FFA500'}}>
                     {user.initials}
                   </div>
                   <div>
