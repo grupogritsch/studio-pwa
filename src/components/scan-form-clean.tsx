@@ -87,7 +87,8 @@ export function ScanForm() {
 
   // Lógica simplificada - usar tanto photosValue quanto photoPreviews para garantir
   const hasPhotos = (photosValue && photosValue.length > 0) || photoPreviews.length > 0;
-  const isSendEnabled = requiresPhoto && hasPhotos && occurrenceValue;
+  // Botão habilitado se tiver ocorrência selecionada E (não requer foto OU tem fotos)
+  const isSendEnabled = occurrenceValue && (!requiresPhoto || hasPhotos);
 
   // Debug logs
   console.log('Debug - Send button state:', {
