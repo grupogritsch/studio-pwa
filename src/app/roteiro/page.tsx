@@ -102,6 +102,47 @@ export default function RoteiroPage() {
     };
   }, []);
 
+  const syncPendingData = async () => {
+    if (!isOnline || isSyncing) return;
+
+    const activeOccurrences = await db.getActiveOccurrences();
+    const unsyncedOccurrences = activeOccurrences.filter(occ => !occ.synced);
+
+    if (unsyncedOccurrences.length === 0) return;
+
+    setIsSyncing(true);
+    console.log(`Sincronizando automaticamente ${unsyncedOccurrences.length} ocorrência(s) pendente(s)...`);
+
+    try {
+      const idsToSync = new Set(unsyncedOccurrences.map(occ => occ.id));
+      setSyncingIds(idsToSync);
+
+      const { successes, failures } = await apiService.syncMultipleOccurrences(unsyncedOccurrences);
+
+      // Update sync status for successful ones
+      for (let i = 0; i < unsyncedOccurrences.length; i++) {
+        const occurrence = unsyncedOccurrences[i];
+        if (successes > 0) {
+          await db.updateOccurrenceSync(occurrence.id, true);
+        }
+      }
+
+      setSyncingIds(new Set());
+
+      if (successes > 0) {
+        toast({
+          title: `${successes} ocorrência(s) sincronizada(s)!`,
+          description: failures > 0 ? `${failures} falharam.` : undefined,
+        });
+      }
+    } catch (error) {
+      console.error('Erro na sincronização automática:', error);
+      setSyncingIds(new Set());
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const loadData = async () => {
     if (typeof window !== 'undefined') {
       console.log('Carregando ocorrências ativas...');
@@ -111,6 +152,16 @@ export default function RoteiroPage() {
 
       const offlineCount = activeOccurrences.filter(occ => !occ.synced).length;
       setOfflineOccurrencesCount(offlineCount);
+
+      // Sincronizar automaticamente se estiver online e houver dados pendentes
+      if (isOnline && offlineCount > 0 && !isSyncing) {
+        await syncPendingData();
+        // Recarregar dados após sincronização
+        const updatedOccurrences = await db.getActiveOccurrences();
+        setOccurrences(updatedOccurrences.reverse());
+        const updatedOfflineCount = updatedOccurrences.filter(occ => !occ.synced).length;
+        setOfflineOccurrencesCount(updatedOfflineCount);
+      }
     }
   };
 

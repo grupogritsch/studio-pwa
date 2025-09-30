@@ -37,7 +37,27 @@ export interface SyncResult {
 const API_BASE_URL = 'https://logistik-production.up.railway.app';
 
 export const apiService = {
+  /**
+   * Verifica se há conexão com a internet
+   */
+  isOnline(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    return navigator.onLine;
+  },
+
+  /**
+   * Cria um roteiro - REQUER conexão online
+   */
   async createRoteiro(roteiroData: RoteiroData): Promise<RoteiroResult> {
+    // Roteiro DEVE ser criado online
+    if (!this.isOnline()) {
+      console.error('Tentativa de criar roteiro offline');
+      return {
+        success: false,
+        error: 'É necessário estar online para iniciar um roteiro'
+      };
+    }
+
     console.log('Creating roteiro in Django API:', roteiroData);
 
     try {
@@ -94,8 +114,21 @@ export const apiService = {
     }
   },
 
+  /**
+   * Sincroniza uma ocorrência com a API - funciona offline salvando localmente
+   */
   async syncOccurrence(occurrence: OccurrenceData): Promise<SyncResult> {
     console.log('Sincronizando ocorrência com Django API:', occurrence);
+
+    // Se offline, retornar sucesso pois já está salvo localmente
+    if (!this.isOnline()) {
+      console.log('Offline - ocorrência já salva localmente');
+      return {
+        success: true,
+        id: occurrence.id,
+        error: 'Salvo localmente (offline)'
+      };
+    }
 
     try {
       const formData = new FormData();

@@ -21,15 +21,7 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
 
   // Show loading state
   if (isLoading) {
-    return (
-      fallback || (
-        <div className="d-flex justify-content-center align-items-center vh-100">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Carregando...</span>
-          </div>
-        </div>
-      )
-    );
+    return fallback || null;
   }
 
   // Show children only if authenticated
