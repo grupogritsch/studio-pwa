@@ -3,6 +3,7 @@
 import { ScannerCamera } from '@/components/scanner-camera';
 import { useEffect } from 'react';
 import { useRouteProtection } from '@/hooks/use-route-protection';
+import AuthGuard from '@/components/auth-guard';
 
 export default function ScannerPage() {
   const { hasActiveRoteiro, isLoading, redirectToHome } = useRouteProtection();
@@ -30,10 +31,12 @@ export default function ScannerPage() {
     return null;
   }
   return (
-    <div className="flex min-h-screen w-full flex-col bg-secondary">
-      <main className="flex flex-1 flex-col items-center justify-center">
-        <ScannerCamera />
-      </main>
-    </div>
+    <AuthGuard>
+      <div className="flex min-h-screen w-full flex-col bg-secondary">
+        <main className="flex flex-1 flex-col items-center justify-center">
+          <ScannerCamera />
+        </main>
+      </div>
+    </AuthGuard>
   );
 }

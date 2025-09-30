@@ -2,7 +2,9 @@
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { WifiOff, Wifi, Check, Loader2 } from 'lucide-react';
+import AuthGuard from '@/components/auth-guard';
+import { useAuth } from '@/contexts/auth-context';
+import { WifiOff, Wifi, Check, Loader2, Menu, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { db } from '@/lib/db';
@@ -50,8 +52,10 @@ export default function Home() {
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [startKm, setStartKm] = useState('');
   const [isCreatingRoteiro, setIsCreatingRoteiro] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { toast } = useToast();
   const { hasActiveRoteiro, isLoading, redirectToRoteiro } = useRouteProtection();
+  const { logout, user } = useAuth();
 
   // Redirecionar para /roteiro se houver roteiro ativo
   useEffect(() => {
@@ -301,7 +305,8 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-secondary">
+    <AuthGuard>
+      <div className="flex min-h-screen w-full flex-col bg-secondary">
       <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 border-b px-4 shadow-sm md:px-6" style={{backgroundColor: '#222E3C'}}>
         <div style={{
           fontSize: '32px',
@@ -317,6 +322,12 @@ export default function Home() {
           ) : (
             <Wifi className="h-5 w-5 text-white" />
           )}
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 text-white hover:bg-white/10 rounded transition-colors"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
         </div>
       </header>
 
@@ -469,6 +480,79 @@ export default function Home() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+
+      {/* Sidebar */}
+      <div className="fixed inset-0 z-50 flex pointer-events-none">
+        {/* Overlay */}
+        <div
+          className={`absolute inset-0 bg-black transition-opacity duration-300 ease-in-out ${
+            isSidebarOpen ? 'opacity-50 pointer-events-auto' : 'opacity-0'
+          }`}
+          onClick={() => setIsSidebarOpen(false)}
+        />
+
+        {/* Sidebar */}
+        <div
+          className={`relative ml-auto w-80 h-full shadow-xl transition-transform duration-300 ease-in-out pointer-events-auto ${
+            isSidebarOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
+          style={{backgroundColor: '#222E3C'}}
+        >
+          <div className="flex flex-col h-full p-6">
+            {/* Close Button */}
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-2 text-white hover:bg-white/10 rounded transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* User Info */}
+            {user && (
+              <div className="mb-8">
+                <div className="flex items-center gap-4">
+                  {/* Initials Circle */}
+                  <div className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl" style={{backgroundColor: '#FFA500'}}>
+                    {user.initials}
+                  </div>
+                  <div>
+                    <div className="text-white font-semibold text-lg">
+                      {user.full_name}
+                    </div>
+                    <div className="text-gray-300 text-sm">
+                      {user.email}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Spacer to push footer to bottom */}
+            <div className="flex-1"></div>
+
+            {/* Footer with Logout */}
+            <div className="border-t border-white/20 pt-4">
+              <button
+                onClick={() => {
+                  logout();
+                  setIsSidebarOpen(false);
+                }}
+                className="w-full flex items-center gap-3 p-4 text-left text-white hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <div className="w-6 h-6 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                  </svg>
+                </div>
+                <span className="text-lg">Sair</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </AuthGuard>
   );
 }
