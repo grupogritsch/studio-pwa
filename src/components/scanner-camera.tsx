@@ -14,6 +14,28 @@ export function ScannerCamera() {
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
 
+  // Função para extrair código CTe da URL
+  const extractCTeCode = (scannedText: string): string => {
+    try {
+      // Verificar se é uma URL CTe que sempre inicia com http
+      if (scannedText.startsWith('http') && scannedText.includes('chCTe=')) {
+        // Extrair usando regex para pegar o valor do parâmetro chCTe
+        const match = scannedText.match(/chCTe=([^&]+)/);
+        if (match && match[1]) {
+          console.log('CTe code extracted from URL:', match[1]);
+          return match[1];
+        }
+      }
+
+      // Se não for URL CTe, retorna o código original
+      console.log('Using original scanned code:', scannedText);
+      return scannedText;
+    } catch (error) {
+      console.error('Error extracting CTe code:', error);
+      return scannedText;
+    }
+  };
+
   useEffect(() => {
     const getCameraPermission = async () => {
       try {
@@ -37,8 +59,13 @@ export function ScannerCamera() {
                 if (result) {
                   scannerControlsRef.current?.stop();
                   scannerControlsRef.current = null;
-                  // Redireciona para o formulário com o código
-                  router.push(`/ocorrencia?code=${encodeURIComponent(result.getText())}`);
+
+                  // Extrair código CTe se for uma URL de CTe
+                  const rawCode = result.getText();
+                  const extractedCode = extractCTeCode(rawCode);
+
+                  // Redireciona para o formulário com o código extraído
+                  router.push(`/ocorrencia?code=${encodeURIComponent(extractedCode)}`);
                 }
                 // Silently ignore reading errors - just keep trying
               });
