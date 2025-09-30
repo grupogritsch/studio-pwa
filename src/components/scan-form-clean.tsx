@@ -32,6 +32,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Camera, Loader2, Package, Send, WifiOff, Wifi, X, Trash2 } from 'lucide-react';
 import { db, syncService } from '@/lib/db';
 import { apiService } from '@/lib/api';
+import { photoUploadService } from '@/lib/photo-upload-service';
 
 const formSchema = z.object({
   scannedCode: z.string().optional(),
@@ -242,16 +243,19 @@ export function ScanForm() {
     const file = event.target.files?.[0];
     if (file) {
       try {
-        // Comprimir e salvar no IndexedDB
-        const compressedBase64 = await savePhotoToIndexedDB(file, file.name);
+        // Upload para R2 e obter URL
+        const r2Url = await uploadPhotoToR2(file, file.name);
+
+        // Comprimir para preview local (não armazenar no IndexedDB)
+        const compressedBase64 = await compressImage(file, 0.5, 800, 600); // Preview menor
 
         // Adicionar à lista de fotos
-        const newPhoto = { path: file.name, preview: compressedBase64 };
+        const newPhoto = { path: r2Url, preview: compressedBase64 };
         setPhotoPreviews(prev => [...prev, newPhoto]);
 
-        // Atualizar formulário com array de base64 comprimidos
+        // Atualizar formulário com array de URLs do R2
         const currentPhotos = form.getValues('photos') || [];
-        const newPhotos = [...currentPhotos, compressedBase64];
+        const newPhotos = [...currentPhotos, r2Url];
         form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
 
       } catch (error) {
@@ -351,16 +355,19 @@ export function ScanForm() {
             const filename = `ocorrencia_${timestamp}.jpg`;
 
             try {
-              // Comprimir e salvar no IndexedDB
-              const compressedBase64 = await savePhotoToIndexedDB(blob, filename);
+              // Upload para R2 e obter URL
+              const r2Url = await uploadPhotoToR2(blob, filename);
+
+              // Comprimir para preview local (não armazenar no IndexedDB)
+              const compressedBase64 = await compressImage(blob, 0.5, 800, 600); // Preview menor
 
               // Adicionar à lista de fotos
-              const newPhoto = { path: filename, preview: compressedBase64 };
+              const newPhoto = { path: r2Url, preview: compressedBase64 };
               setPhotoPreviews(prev => [...prev, newPhoto]);
 
-              // Atualizar formulário com array de base64 comprimidos
+              // Atualizar formulário com array de URLs do R2
               const currentPhotos = form.getValues('photos') || [];
-              const newPhotos = [...currentPhotos, compressedBase64];
+              const newPhotos = [...currentPhotos, r2Url];
               form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
 
               stopCamera();
@@ -411,18 +418,23 @@ export function ScanForm() {
     });
   };
 
-  const savePhotoToIndexedDB = async (blob: Blob, filename: string): Promise<string> => {
+  const uploadPhotoToR2 = async (blob: Blob, filename: string): Promise<string> => {
     try {
-      // Comprimir imagem antes de armazenar
+      // Comprimir imagem antes do upload
       const compressedBase64 = await compressImage(blob, 0.7, 1280, 720);
 
-      console.log(`Foto comprimida: ${filename}`);
-      console.log(`Tamanho original: ${(blob.size / 1024).toFixed(2)}KB`);
-      console.log(`Tamanho comprimido: ${(compressedBase64.length * 0.75 / 1024).toFixed(2)}KB`);
+      console.log(`Uploading photo: ${filename}`);
+      console.log(`Original size: ${(blob.size / 1024).toFixed(2)}KB`);
+      console.log(`Compressed size: ${(compressedBase64.length * 0.75 / 1024).toFixed(2)}KB`);
 
-      return compressedBase64; // Retorna o base64 comprimido
+      // Upload via Django API que fará upload para R2
+      const r2Url = await photoUploadService.uploadBase64ToR2(compressedBase64, filename);
+
+      console.log(`Photo uploaded to R2 via Django: ${r2Url}`);
+      return r2Url; // Retorna a URL do R2
+
     } catch (error) {
-      console.error('Erro ao comprimir/salvar foto:', error);
+      console.error('Erro ao fazer upload para R2:', error);
       throw error;
     }
   };
@@ -431,9 +443,9 @@ export function ScanForm() {
     const newPhotoPreviews = photoPreviews.filter((_, i) => i !== index);
     setPhotoPreviews(newPhotoPreviews);
 
-    // Usar data URLs em vez de paths
-    const newPhotoDataUrls = newPhotoPreviews.map(photo => photo.preview);
-    form.setValue('photos', newPhotoDataUrls, { shouldValidate: true, shouldDirty: true });
+    // Usar URLs do R2 em vez de base64
+    const newPhotoUrls = newPhotoPreviews.map(photo => photo.path);
+    form.setValue('photos', newPhotoUrls, { shouldValidate: true, shouldDirty: true });
 
     toast({
       title: "Foto removida",
