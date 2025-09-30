@@ -2,6 +2,7 @@ import type {Metadata} from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/contexts/auth-context";
+import { DebugConsole } from "@/components/debug-console";
 
 export const metadata: Metadata = {
   title: 'Logistik',
@@ -29,6 +30,7 @@ export default function RootLayout({
           {children}
         </AuthProvider>
         <Toaster />
+        <DebugConsole />
       </body>
     </html>
   );
