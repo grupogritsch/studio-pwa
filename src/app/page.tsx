@@ -1,69 +1,74 @@
+
 "use client";
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import AuthGuard from '@/components/auth-guard';
+import { QrCode, Package, Clock, WifiOff, Edit3, Clock4, CheckCircle, RefreshCw, Wifi, Menu, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
-import { WifiOff, Wifi, Check, Loader2, Menu, X } from 'lucide-react';
 import Image from 'next/image';
-import { useEffect, useState } from 'react';
+import { ScannerCamera } from '@/components/scanner-camera';
+import { ScanForm } from '@/components/scan-form-clean';
+import { Suspense } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/db';
 import { apiService } from '@/lib/api';
-import { Package, Calendar, Truck } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useRouteProtection } from '@/hooks/use-route-protection';
+import AuthGuard from '@/components/auth-guard';
 
-type Roteiro = {
+
+type Occurrence = {
   id: number;
-  startDate: string;
-  endDate: string;
-  totalOccurrences: number;
-  syncedOccurrences: number;
-  vehiclePlate?: string;
-  startKm?: number;
+  scannedCode: string;
+  occurrence: string;
+  timestamp: string;
+  receiverName?: string;
+  receiverDocument?: string;
+  synced?: boolean;
 };
+
+// Define a interface para o evento de instalação
+interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: Array<string>;
+  readonly userChoice: Promise<{
+    outcome: 'accepted' | 'dismissed';
+    platform: string;
+  }>;
+  prompt(): Promise<void>;
+}
+
+
+type ViewMode = 'list' | 'scan' | 'manual';
 
 export default function Home() {
   const router = useRouter();
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  const [offlineOccurrencesCount, setOfflineOccurrencesCount] = useState(0);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isOnline, setIsOnline] = useState(true);
-  const [roteiros, setRoteiros] = useState<Roteiro[]>([]);
-  const [activeRoteiro, setActiveRoteiro] = useState<any>(null);
-  const [showStartDialog, setShowStartDialog] = useState(false);
-  const [vehiclePlate, setVehiclePlate] = useState('');
-  const [startKm, setStartKm] = useState('');
-  const [isCreatingRoteiro, setIsCreatingRoteiro] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncingIds, setSyncingIds] = useState<Set<number>>(new Set());
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const startY = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-  const { hasActiveRoteiro, isLoading, redirectToRoteiro } = useRouteProtection();
   const { logout, user } = useAuth();
 
-  // Redirecionar para /roteiro se houver roteiro ativo
   useEffect(() => {
-    if (!isLoading && hasActiveRoteiro) {
-      redirectToRoteiro();
-    }
-  }, [hasActiveRoteiro, isLoading, redirectToRoteiro]);
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
 
   useEffect(() => {
     const updateOnlineStatus = () => {
@@ -82,406 +87,488 @@ export default function Home() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Carregar roteiros finalizados e roteiro ativo
-    async function loadData() {
-      if (typeof window !== 'undefined') {
-        console.log('Carregando roteiros...');
-        const savedRoteiros = await db.getAllRoteiros();
-        console.log('Roteiros carregados:', savedRoteiros);
-        setRoteiros(savedRoteiros.reverse());
-
-        // Carregar roteiro ativo baseado no localStorage
-        const roteiroData = localStorage.getItem('currentRoteiroData');
-        if (roteiroData) {
-          const data = JSON.parse(roteiroData);
-          // Só considerar roteiro ativo se tem apiRoteiroId (criado via API)
-          if (data.apiRoteiroId) {
-            const activeOccurrences = await db.getActiveOccurrences();
-            const syncedCount = activeOccurrences.filter(occ => occ.synced).length;
-
-            setActiveRoteiro({
-              occurrences: activeOccurrences,
-              totalOccurrences: activeOccurrences.length,
-              syncedOccurrences: syncedCount,
-              vehiclePlate: data.vehiclePlate || 'Roteiro Ativo',
-              apiRoteiroId: data.apiRoteiroId
-            });
-          } else {
-            // Dados inválidos no localStorage, limpar
-            localStorage.removeItem('currentRoteiroData');
-            setActiveRoteiro(null);
-          }
-        } else {
-          setActiveRoteiro(null);
-        }
-      }
-    }
-
-    loadData();
-
-    // Recarregar roteiros quando a página volta ao foco (após finalizar roteiro)
-    const handleFocus = () => {
-      console.log('Página ganhou foco, recarregando roteiros...');
-      loadData();
-    };
-
-    window.addEventListener('focus', handleFocus);
-
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('focus', handleFocus);
     };
   }, []);
 
-  // Recarregar sempre que a página for visitada (incluindo navegação)
-  useEffect(() => {
-    async function reloadData() {
-      if (typeof window !== 'undefined') {
-        console.log('Recarregando dados via navegação...');
-        const savedRoteiros = await db.getAllRoteiros();
-        console.log('Roteiros recarregados:', savedRoteiros);
-        setRoteiros(savedRoteiros.reverse());
+  const syncPendingData = async () => {
+    if (!isOnline || isSyncing) return;
 
-        // Carregar roteiro ativo baseado no localStorage
-        const roteiroData = localStorage.getItem('currentRoteiroData');
-        if (roteiroData) {
-          const data = JSON.parse(roteiroData);
-          // Só considerar roteiro ativo se tem apiRoteiroId (criado via API)
-          if (data.apiRoteiroId) {
-            const activeOccurrences = await db.getActiveOccurrences();
-            const syncedCount = activeOccurrences.filter(occ => occ.synced).length;
+    const activeOccurrences = await db.getActiveOccurrences();
+    const unsyncedOccurrences = activeOccurrences.filter(occ => !occ.synced);
 
-            setActiveRoteiro({
-              occurrences: activeOccurrences,
-              totalOccurrences: activeOccurrences.length,
-              syncedOccurrences: syncedCount,
-              vehiclePlate: data.vehiclePlate || 'Roteiro Ativo',
-              apiRoteiroId: data.apiRoteiroId
-            });
-          } else {
-            // Dados inválidos no localStorage, limpar
-            localStorage.removeItem('currentRoteiroData');
-            setActiveRoteiro(null);
-          }
-        } else {
-          setActiveRoteiro(null);
-        }
-      }
-    }
-    reloadData();
-  }, [router]);
+    if (unsyncedOccurrences.length === 0) return;
 
-  const handleStartNewRoteiro = () => {
-    setShowStartDialog(true);
-  };
-
-  const handleStartRoteiroSubmit = async () => {
-    if (!vehiclePlate.trim() || !startKm.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Campos obrigatórios",
-        description: "Preencha a placa do veículo e a quilometragem inicial."
-      });
-      return;
-    }
-
-    // Verificar se está online
-    if (!isOnline) {
-      toast({
-        variant: "destructive",
-        title: "Sem conexão",
-        description: "É necessário estar online para iniciar um novo roteiro."
-      });
-      return;
-    }
-
-    setIsCreatingRoteiro(true);
+    setIsSyncing(true);
+    console.log(`Sincronizando automaticamente ${unsyncedOccurrences.length} ocorrência(s) pendente(s)...`);
 
     try {
-      // Criar roteiro na API primeiro
-      const roteiroData = {
-        vehiclePlate: vehiclePlate.trim(),
-        startKm: parseInt(startKm),
-        startDate: new Date().toISOString()
-      };
+      const idsToSync = new Set(unsyncedOccurrences.map(occ => occ.id));
+      setSyncingIds(idsToSync);
 
-      const result = await apiService.createRoteiro(roteiroData);
+      const { successes, failures } = await apiService.syncMultipleOccurrences(unsyncedOccurrences);
 
-      if (result.success && result.id) {
-        // Salvar dados do roteiro com o ID da API
-        localStorage.setItem('currentRoteiroData', JSON.stringify({
-          ...roteiroData,
-          apiRoteiroId: result.id
-        }));
+      // Update sync status for successful ones
+      for (let i = 0; i < unsyncedOccurrences.length; i++) {
+        const occurrence = unsyncedOccurrences[i];
+        if (successes > 0) {
+          await db.updateOccurrenceSync(occurrence.id, true);
+        }
+      }
 
-        setShowStartDialog(false);
-        setVehiclePlate('');
-        setStartKm('');
-        router.push('/roteiro');
-      } else {
+      setSyncingIds(new Set());
+
+      if (successes > 0) {
         toast({
-          variant: "destructive",
-          title: "Erro ao criar roteiro",
-          description: result.error || "Não foi possível criar o roteiro na API."
+          title: `${successes} ocorrência(s) sincronizada(s)!`,
+          description: failures > 0 ? `${failures} falharam.` : undefined,
         });
       }
     } catch (error) {
-      console.error('Erro ao criar roteiro:', error);
-      toast({
-        variant: "destructive",
-        title: "Erro de conexão",
-        description: "Não foi possível conectar com o servidor."
-      });
+      console.error('Erro na sincronização automática:', error);
+      setSyncingIds(new Set());
     } finally {
-      setIsCreatingRoteiro(false);
+      setIsSyncing(false);
     }
   };
 
-  const handleFinishRoteiro = async () => {
-    if (!activeRoteiro || typeof window === 'undefined') return;
+  const loadData = async () => {
+    if (typeof window !== 'undefined') {
+      const activeOccurrences = await db.getActiveOccurrences();
+      setOccurrences(activeOccurrences.reverse());
 
-    const totalOccurrences = activeRoteiro.totalOccurrences;
-    const syncedOccurrences = activeRoteiro.syncedOccurrences;
+      const offlineCount = activeOccurrences.filter(occ => !occ.synced).length;
+      setOfflineOccurrencesCount(offlineCount);
 
-    console.log('Finalizando roteiro:', { totalOccurrences, syncedOccurrences });
-
-    // Recuperar dados do roteiro do localStorage
-    const roteiroData = localStorage.getItem('currentRoteiroData');
-    let vehiclePlate = '';
-    let startKm = 0;
-    let startDate = new Date().toISOString();
-    let apiRoteiroId = null;
-
-    if (roteiroData) {
-      const data = JSON.parse(roteiroData);
-      vehiclePlate = data.vehiclePlate || '';
-      startKm = data.startKm || 0;
-      startDate = data.startDate || startDate;
-      apiRoteiroId = data.apiRoteiroId || null;
+      // NÃO sincronizar automaticamente - usuário controla quando sincronizar
     }
+  };
 
-    // Salvar resumo do roteiro
-    const now = new Date().toISOString();
-    const roteiroSummary = {
-      startDate,
-      endDate: now,
-      totalOccurrences,
-      syncedOccurrences,
-      vehiclePlate,
-      startKm
+  useEffect(() => {
+    // Limpar dados antigos de roteiro
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('currentRoteiroData');
+    }
+    loadData();
+  }, []);
+
+  // Recarregar quando a página ganhar foco (quando voltar de adicionar ocorrência)
+  useEffect(() => {
+    const handleFocus = () => {
+      loadData();
     };
 
-    console.log('Salvando roteiro:', roteiroSummary);
-
-    try {
-      const roteiroId = await db.addRoteiro(roteiroSummary);
-      console.log('Roteiro salvo com ID:', roteiroId);
-
-      // Associar todas as ocorrências ao roteiro (usando o ID local, não o da API)
-      // Se o roteiro foi criado via API, as ocorrências já devem ter o apiRoteiroId
-      if (!apiRoteiroId) {
-        // Fallback para roteiros antigos
-        for (const occurrence of activeRoteiro.occurrences) {
-          await db.updateOccurrenceWithRoteiro(occurrence.id, roteiroId as number, occurrence.synced || false);
-        }
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadData();
       }
+    };
 
-      // Limpar dados do localStorage
-      localStorage.removeItem('currentRoteiroData');
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-      // Recarregar dados
-      const savedRoteiros = await db.getAllRoteiros();
-      setRoteiros(savedRoteiros.reverse());
-      setActiveRoteiro(null);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
+  // Interceptar botão/gesto de voltar do dispositivo
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      // Se voltou e estava em scan ou manual, volta para list
+      if (viewMode === 'scan' || viewMode === 'manual') {
+        handleBackToList();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [viewMode]);
+
+  const handleNewOccurrence = () => {
+    setViewMode('scan');
+    // Adiciona entrada no histórico para permitir voltar com botão/gesto do dispositivo
+    window.history.pushState({ viewMode: 'scan' }, '');
+  };
+
+  const handleManualEntry = () => {
+    setViewMode('manual');
+    // Adiciona entrada no histórico para permitir voltar com botão/gesto do dispositivo
+    window.history.pushState({ viewMode: 'manual' }, '');
+  };
+
+  const handleBackToList = () => {
+    setViewMode('list');
+    // Recarregar dados quando voltar para lista
+    loadData();
+  };
+
+  const handleDeleteOccurrence = async (id: number) => {
+    try {
+      await db.deleteOccurrence(id);
+      toast({
+        title: "Ocorrência excluída",
+        description: "A ocorrência foi removida do dispositivo.",
+      });
+      loadData(); // Recarregar lista
     } catch (error) {
-      console.error('Erro ao salvar roteiro:', error);
+      console.error('Erro ao excluir ocorrência:', error);
       toast({
         variant: "destructive",
         title: "Erro",
-        description: "Não foi possível finalizar o roteiro."
+        description: "Não foi possível excluir a ocorrência.",
       });
     }
   };
 
-  return (
-    <AuthGuard>
-      <div className="flex min-h-screen w-full flex-col bg-secondary">
-      <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 px-4 shadow-sm md:px-6" style={{backgroundColor: '#222E3C'}}>
-        <div className="flex items-center gap-4">
+  const handleSyncAll = useCallback(async () => {
+    if (isSyncing) return;
+
+    setIsSyncing(true);
+
+    try {
+      // Verificar conexão testando a API
+      const hasConnection = await apiService.checkConnection();
+
+      if (!hasConnection) {
+        toast({
+          variant: "destructive",
+          title: "Sem conexão",
+          description: "Não há conexão com a internet. Verifique sua rede e tente novamente.",
+        });
+        setIsSyncing(false);
+        return;
+      }
+
+      const activeOccurrences = await db.getActiveOccurrences();
+      const unsyncedOccurrences = activeOccurrences.filter(occ => !occ.synced);
+
+      if (unsyncedOccurrences.length === 0) {
+        toast({
+          title: "Tudo sincronizado!",
+        });
+        setIsSyncing(false);
+        return;
+      }
+
+      toast({
+        title: "Sincronizando...",
+        description: `Enviando ${unsyncedOccurrences.length} ocorrência(s) para o servidor.`,
+      });
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      // Sincronizar uma por vez
+      for (const occurrence of unsyncedOccurrences) {
+        // Marcar como sincronizando
+        setSyncingIds(new Set([occurrence.id]));
+
+        try {
+          const result = await apiService.syncOccurrence(occurrence);
+
+          if (result.success) {
+            // SUCESSO: Excluir do IndexDB
+            await db.deleteOccurrence(occurrence.id);
+            successCount++;
+
+            // Recarregar lista para mostrar que foi removido
+            await loadData();
+          } else {
+            // FALHOU: Manter no IndexDB
+            failureCount++;
+          }
+        } catch (error) {
+          console.error(`Erro ao sincronizar ocorrência ${occurrence.id}:`, error);
+          failureCount++;
+        }
+      }
+
+      // Limpar estado de sincronização
+      setSyncingIds(new Set());
+      await loadData();
+
+      // Mostrar resultado
+      if (successCount > 0) {
+        toast({
+          title: `${successCount} ocorrência(s) sincronizada(s)!`,
+          description: failureCount > 0 ? `${failureCount} falharam e permaneceram na lista.` : "Todas as ocorrências foram enviadas com sucesso.",
+        });
+      }
+
+      if (failureCount > 0 && successCount === 0) {
+        toast({
+          variant: "destructive",
+          title: "Erro na sincronização",
+          description: "Não foi possível sincronizar as ocorrências. Verifique sua conexão.",
+        });
+      }
+
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Erro na sincronização",
+        description: "Ocorreu um erro durante a sincronização.",
+      });
+      setSyncingIds(new Set());
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [isSyncing, toast]);
+
+
+  const handleInstallClick = async () => {
+    if (!installPrompt) return;
+
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      toast({
+        title: 'App instalado!',
+        description: 'O ScanTracker foi adicionado à sua tela inicial.',
+      });
+    }
+    setInstallPrompt(null);
+  };
+
+  // Pull to refresh logic
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (window.scrollY === 0) {
+        startY.current = e.touches[0].clientY;
+        setIsPulling(true);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isPulling || isSyncing) return;
+
+      const currentY = e.touches[0].clientY;
+      const diff = currentY - startY.current;
+
+      if (diff > 0 && window.scrollY === 0) {
+        e.preventDefault();
+        const distance = Math.min(diff * 0.5, 120);
+        setPullDistance(distance);
+      }
+    };
+
+    const handleTouchEnd = async () => {
+      if (!isPulling || isSyncing) return;
+
+      setIsPulling(false);
+
+      if (pullDistance >= 80) {
+        await handleSyncAll();
+      }
+
+      setPullDistance(0);
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isPulling, isSyncing, pullDistance, handleSyncAll]);
+
+  const getOccurrenceLabel = (value: string) => {
+    switch (value) {
+      case 'entregue': return 'Entregue';
+      case 'avaria': return 'Avaria';
+      case 'extravio': return 'Extravio';
+      case 'devolucao': return 'Devolução';
+      case 'recusado': return 'Recusado';
+      case 'feriado': return 'Feriado';
+      case 'outros': return 'Outros';
+      default: return value;
+    }
+  };
+
+  const shouldShowIndicator = isPulling || isSyncing;
+  const getIndicatorText = () => {
+    if (isSyncing) return "Sincronizando...";
+    if (pullDistance >= 80) return "Solte para sincronizar";
+    return "Puxe para sincronizar";
+  };
+
+  // Header unificado
+  const renderHeader = () => (
+    <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 px-4 shadow-sm md:px-6" style={{backgroundColor: '#222E3C'}}>
+      <div className="flex items-center gap-4">
+        {viewMode === 'list' && (
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="p-2 text-white hover:bg-white/10 rounded transition-colors"
           >
             <Menu className="h-8 w-8" />
           </button>
-          <Image
-            src="/logistik-dark.png"
-            alt="Logistik"
-            width={140}
-            height={32}
-            priority
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          {!isOnline ? (
-            <WifiOff className="h-5 w-5 text-white" />
-          ) : (
-            <Wifi className="h-5 w-5 text-white" />
-          )}
-        </div>
-      </header>
+        )}
+      </div>
+      <div className="absolute left-1/2 transform -translate-x-1/2">
+        <Image
+          src="/logistik-dark.png"
+          alt="Logistik"
+          width={140}
+          height={32}
+          priority
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        {offlineOccurrencesCount > 0 && (
+          <button
+            onClick={handleSyncAll}
+            disabled={isSyncing}
+            className="p-1 hover:bg-white/10 rounded transition-colors"
+            title="Sincronizar ocorrências"
+          >
+            <RefreshCw className={`h-5 w-5 text-white ${isSyncing ? 'animate-spin' : ''}`} />
+          </button>
+        )}
+      </div>
+    </header>
+  );
 
-      <main className="flex flex-1 flex-col items-center p-4 text-center pb-24">
+  // Renderizar modo Scanner
+  if (viewMode === 'scan') {
+    return (
+      <AuthGuard>
+        <ScannerCamera onBackToList={handleBackToList} />
+      </AuthGuard>
+    );
+  }
 
-        <div className="w-full max-w-2xl space-y-6">
-          {/* Roteiro ativo */}
-          {activeRoteiro && (
-            <div className="space-y-4">
-              <Card
-                className="text-left cursor-pointer hover:bg-accent/50 transition-colors"
-                onClick={() => router.push('/roteiro')}
+  // Renderizar modo Manual
+  if (viewMode === 'manual') {
+    return (
+      <AuthGuard>
+        <div className="flex min-h-screen w-full flex-col bg-secondary">
+          {renderHeader()}
+          <main className="flex flex-1 flex-col overflow-y-auto">
+            <Suspense fallback={<div className="flex items-center justify-center h-96">Carregando...</div>}>
+              <ScanForm onBackToList={handleBackToList} />
+            </Suspense>
+          </main>
+        </div>
+      </AuthGuard>
+    );
+  }
+
+  // Renderizar modo Lista (padrão)
+  return (
+    <AuthGuard>
+    <div ref={containerRef} className="flex min-h-screen w-full flex-col bg-secondary relative">
+      {/* Pull to refresh indicator */}
+      {shouldShowIndicator && (
+        <div
+          className="absolute top-0 left-0 right-0 z-20 flex flex-col items-center justify-center bg-secondary border-b shadow-sm transition-all duration-200"
+          style={{
+            height: `${Math.max(pullDistance, 60)}px`,
+            transform: `translateY(-${Math.max(60 - pullDistance, 0)}px)`,
+            opacity: Math.min(pullDistance / 80, 1)
+          }}
+        >
+          <div className="flex items-center gap-2">
+            {isSyncing ? (
+              <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
+            ) : (
+              <div
+                className="transition-transform duration-200"
+                style={{ transform: `scale(${Math.min(0.5 + (pullDistance / 80) * 0.5, 1)})` }}
               >
+                <RefreshCw className="h-5 w-5 text-blue-500" />
+              </div>
+            )}
+            <span className="text-sm text-muted-foreground">{getIndicatorText()}</span>
+          </div>
+        </div>
+      )}
+
+      {renderHeader()}
+      <main className="flex flex-1 flex-col items-center p-4 text-center pb-24">
+        {occurrences.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center">
+            <h2 className="text-xl text-muted-foreground">
+              Nenhuma ocorrência registrada ainda.
+            </h2>
+          </div>
+        ) : (
+          <div className="w-full max-w-2xl space-y-4">
+            {occurrences.map((occ, index) => (
+               <Card key={index} className="text-left relative">
                 <CardHeader className="p-4">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Truck className="h-5 w-5 text-primary"/>
-                    {activeRoteiro.vehiclePlate || 'Roteiro Ativo'}
+                  <CardTitle className="text-lg flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Package className="h-5 w-5 text-primary"/>
+                      {getOccurrenceLabel(occ.occurrence)}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {syncingIds.has(occ.id) ? (
+                        <RefreshCw className="h-5 w-5 text-blue-500 animate-spin" title="Sincronizando..." />
+                      ) : occ.synced ? (
+                        <CheckCircle className="h-5 w-5 text-green-500" title="Sincronizado" />
+                      ) : (
+                        <Clock4 className="h-5 w-5 text-yellow-500" title="Aguardando sincronização" />
+                      )}
+                      <button
+                        onClick={() => handleDeleteOccurrence(occ.id)}
+                        className="p-1 hover:bg-red-100 rounded transition-colors"
+                        title="Excluir ocorrência"
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </button>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-muted-foreground"/>
-                      <span className="text-sm text-muted-foreground">
-                        {new Date().toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {activeRoteiro.syncedOccurrences}/{activeRoteiro.totalOccurrences}
-                    </div>
-                  </div>
+                  <p className="text-sm text-muted-foreground break-all">
+                    <b>Código:</b> {occ.scannedCode}
+                  </p>
+                  <p className="text-sm text-muted-foreground flex items-center gap-2">
+                    <Clock className="h-4 w-4"/>
+                    {new Date(occ.timestamp).toLocaleString()}
+                  </p>
                 </CardContent>
               </Card>
-            </div>
-          )}
-
-          {/* Roteiros finalizados */}
-          {roteiros.length > 0 && (
-            <div className="space-y-4">
-              {roteiros.map((roteiro) => (
-                <Card
-                  key={roteiro.id}
-                  className="text-left cursor-pointer hover:bg-accent/50 transition-colors"
-                  onClick={() => router.push(`/roteiro/${roteiro.id}`)}
-                >
-                  <CardHeader className="p-4">
-                    <CardTitle className="text-lg flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Truck className="h-5 w-5 text-primary"/>
-                        {roteiro.vehiclePlate || `Roteiro #${roteiro.id}`}
-                      </div>
-                      <div className="text-sm text-green-600 font-bold">
-                        Finalizado
-                      </div>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-muted-foreground"/>
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(roteiro.endDate).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {roteiro.syncedOccurrences}/{roteiro.totalOccurrences}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-
-          {/* Mensagem quando não há roteiros */}
-          {!activeRoteiro && roteiros.length === 0 && (
-            <div className="text-muted-foreground">
-              Nenhum roteiro ainda.
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </main>
-
-      <footer className="sticky bottom-0 z-10 flex justify-center items-center gap-4 border-t p-4" style={{backgroundColor: '#222E3C'}}>
+      <footer className="fixed bottom-0 left-0 right-0 z-10 flex justify-center items-center gap-4 border-t p-4" style={{backgroundColor: '#222E3C'}}>
         <Button
-          onClick={handleStartNewRoteiro}
+          variant="default"
           size="icon"
-          className="h-16 w-48 rounded-full shadow-lg text-black text-lg font-semibold"
-          style={{ backgroundColor: activeRoteiro || !isOnline ? '#FFBB66' : '#FFA500' }}
-          disabled={!!activeRoteiro || !isOnline}
+          className="h-16 w-16 rounded-full shadow-lg"
+          style={{ backgroundColor: '#FFA500' }}
+          onClick={handleNewOccurrence}
+          aria-label="Nova Ocorrência"
         >
-          Iniciar Roteiro
+          <QrCode className="h-10 w-10 text-black" />
+        </Button>
+        <Button
+          variant="default"
+          size="icon"
+          className="h-16 w-16 rounded-full shadow-lg"
+          style={{ backgroundColor: '#FFA500' }}
+          onClick={handleManualEntry}
+          aria-label="Entrada Manual"
+        >
+          <Edit3 className="h-10 w-10 text-black" />
         </Button>
       </footer>
-
-      {/* Modal para iniciar roteiro */}
-      <Dialog open={showStartDialog} onOpenChange={setShowStartDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Iniciar Roteiro</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="vehiclePlate">Placa do Veículo</Label>
-              <Input
-                id="vehiclePlate"
-                placeholder="Ex: ABC-1234"
-                value={vehiclePlate}
-                onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
-                className="uppercase input-custom"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="startKm">Quilometragem Inicial</Label>
-              <Input
-                id="startKm"
-                type="number"
-                placeholder="Ex: 12000"
-                value={startKm}
-                onChange={(e) => setStartKm(e.target.value)}
-                className="input-custom"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end space-x-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowStartDialog(false);
-                setVehiclePlate('');
-                setStartKm('');
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleStartRoteiroSubmit}
-              style={{ backgroundColor: '#FFA500' }}
-              disabled={isCreatingRoteiro || !isOnline}
-            >
-              {isCreatingRoteiro ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin text-black" />
-                  Criando...
-                </>
-              ) : (
-                'Iniciar'
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Sidebar */}
       <div className="fixed inset-0 z-50 flex pointer-events-none" style={{top: '80px'}}>
@@ -544,7 +631,7 @@ export default function Home() {
           </div>
         </div>
       </div>
-      </div>
+    </div>
     </AuthGuard>
   );
 }

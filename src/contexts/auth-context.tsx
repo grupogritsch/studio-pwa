@@ -57,38 +57,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      const response = await fetch(getApiUrl(API_CONFIG.endpoints.verify), {
-        method: "GET",
-        credentials: "include",
-      });
+      const storedUser = localStorage.getItem("user");
+      const storedSessionKey = localStorage.getItem("session_key");
 
-      const data = await response.json();
+      if (storedUser && storedSessionKey) {
+        setUser(JSON.parse(storedUser));
+        setIsLoading(false);
 
-      if (data.success && data.authenticated) {
-        setUser(data.user);
-        // Update localStorage
-        localStorage.setItem("user", JSON.stringify(data.user));
-        localStorage.setItem("session_key", data.session_key);
+        // Verificar com a API em background
+        try {
+          const response = await fetch(getApiUrl(API_CONFIG.endpoints.verify), {
+            method: "GET",
+            credentials: "include",
+          });
+
+          const data = await response.json();
+
+          if (data.success && data.authenticated) {
+            setUser(data.user);
+            localStorage.setItem("user", JSON.stringify(data.user));
+            localStorage.setItem("session_key", data.session_key);
+          }
+        } catch (error) {
+          // Se erro na API, manter usuário logado localmente
+        }
       } else {
-        // Clear user data if not authenticated
-        setUser(null);
-        localStorage.removeItem("user");
-        localStorage.removeItem("session_key");
+        // Sem dados no localStorage, verificar com API
+        const response = await fetch(getApiUrl(API_CONFIG.endpoints.verify), {
+          method: "GET",
+          credentials: "include",
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.authenticated) {
+          setUser(data.user);
+          localStorage.setItem("user", JSON.stringify(data.user));
+          localStorage.setItem("session_key", data.session_key);
+        } else {
+          setUser(null);
+        }
+        setIsLoading(false);
       }
     } catch (error) {
-      console.error("Error checking auth:", error);
-      setUser(null);
-      localStorage.removeItem("user");
-      localStorage.removeItem("session_key");
-    } finally {
+      // Em caso de erro, verificar localStorage
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      } else {
+        setUser(null);
+      }
       setIsLoading(false);
     }
   };
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      console.log("Attempting login with:", { username, url: getApiUrl(API_CONFIG.endpoints.login) });
-
       const response = await fetch(getApiUrl(API_CONFIG.endpoints.login), {
         method: "POST",
         headers: {
@@ -98,20 +122,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: "include",
       });
 
-      console.log("Login response status:", response.status);
-      console.log("Login response headers:", Object.fromEntries(response.headers.entries()));
-
       const data = await response.json();
-      console.log("Login response data:", data);
 
       if (data.success) {
         setUser(data.user);
         localStorage.setItem("user", JSON.stringify(data.user));
         localStorage.setItem("session_key", data.session_key);
-        console.log("Login successful");
         return true;
       } else {
-        console.log("Login failed:", data.message);
         return false;
       }
     } catch (error) {
@@ -148,7 +166,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Definir novo timeout para logout por inatividade
     activityTimeoutRef.current = setTimeout(() => {
-      console.log("Usuário inativo por 2 horas - fazendo logout");
       logout();
     }, INACTIVITY_TIMEOUT);
 
@@ -178,7 +195,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const data = await response.json();
 
         if (!data.success || !data.authenticated) {
-          console.log("Sessão expirou no servidor - fazendo logout");
           logout();
         }
       } catch (error) {

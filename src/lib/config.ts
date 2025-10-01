@@ -3,9 +3,10 @@ export const API_CONFIG = {
   baseUrl: process.env.NEXT_PUBLIC_API_URL || 'https://logistik-production.up.railway.app',
 
   endpoints: {
-    login: '/auth/api/login/',
-    logout: '/auth/api/logout/',
-    verify: '/auth/api/verify/',
+    login: '/api/auth/login/',
+    logout: '/api/auth/logout/',
+    verify: '/api/auth/verify/',
+    occurrences: '/api/occurrences/',
   }
 };
 

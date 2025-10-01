@@ -1,3 +1,5 @@
+import { getApiUrl, API_CONFIG } from './config';
+
 // Real API service for Django integration
 export interface OccurrenceData {
   id?: number;
@@ -7,9 +9,8 @@ export interface OccurrenceData {
   receiverName?: string;
   receiverDocument?: string;
   photos?: string[];
-  roteiroId?: number;
-  vehiclePlate?: string;
-  vehicleKm?: number;
+  photo_urls?: string[];
+  photoBase64?: string;
   latitude?: number;
   longitude?: number;
   synced?: boolean;
@@ -34,7 +35,7 @@ export interface SyncResult {
   error?: string;
 }
 
-const API_BASE_URL = 'https://logistik-production.up.railway.app';
+const API_BASE_URL = API_CONFIG.baseUrl;
 
 export const apiService = {
   /**
@@ -43,75 +44,6 @@ export const apiService = {
   isOnline(): boolean {
     if (typeof navigator === 'undefined') return false;
     return navigator.onLine;
-  },
-
-  /**
-   * Cria um roteiro - REQUER conexão online
-   */
-  async createRoteiro(roteiroData: RoteiroData): Promise<RoteiroResult> {
-    // Roteiro DEVE ser criado online
-    if (!this.isOnline()) {
-      console.error('Tentativa de criar roteiro offline');
-      return {
-        success: false,
-        error: 'É necessário estar online para iniciar um roteiro'
-      };
-    }
-
-    console.log('Creating roteiro in Django API:', roteiroData);
-
-    try {
-      // Criar roteiro através da API de ocorrências
-      // Vamos fazer uma chamada especial para criar o roteiro
-      const formData = new FormData();
-      formData.append('scanned_code', 'ROTEIRO_INIT');
-      formData.append('occurrence_type', 'outros');
-      formData.append('occurrence_datetime', roteiroData.startDate);
-      formData.append('vehicle_plate', roteiroData.vehiclePlate);
-      formData.append('vehicle_km', roteiroData.startKm.toString());
-
-      const response = await fetch(`${API_BASE_URL}/api/`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      });
-
-      if (response.ok) {
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.indexOf('application/json') !== -1) {
-          const result = await response.json();
-          console.log('Roteiro created with API ID:', result.roteiro_id);
-
-          // Remover a ocorrência inicial que foi criada apenas para criar o roteiro
-          // (isso é uma gambiarra temporária)
-
-          return {
-            success: true,
-            id: result.roteiro_id
-          };
-        } else {
-          const errorText = await response.text();
-          console.error('Received non-JSON response:', errorText);
-          return {
-            success: false,
-            error: 'Server returned non-JSON response.'
-          };
-        }
-      } else {
-        const errorText = await response.text();
-        console.error('Erro ao criar roteiro:', errorText);
-        return {
-          success: false,
-          error: errorText
-        };
-      }
-    } catch (error) {
-      console.error('Erro ao criar roteiro:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro de conexão com o servidor'
-      };
-    }
   },
 
   /**
@@ -133,23 +65,10 @@ export const apiService = {
     try {
       const formData = new FormData();
 
-      // Dados obrigatórios para a API Django
-      formData.append('scanned_code', occurrence.scannedCode);
+      // Dados obrigatórios conforme a nova API
+      formData.append('code', occurrence.scannedCode);
       formData.append('occurrence_type', occurrence.occurrence);
       formData.append('occurrence_datetime', occurrence.timestamp);
-
-      // Dados do roteiro (se disponível)
-      if (occurrence.roteiroId) {
-        formData.append('roteiro_id', occurrence.roteiroId.toString());
-      }
-
-      // Sempre enviar vehicle_plate e vehicle_km para casos onde o roteiro não existe
-      if (occurrence.vehiclePlate) {
-        formData.append('vehicle_plate', occurrence.vehiclePlate);
-      }
-      if (occurrence.vehicleKm !== undefined && occurrence.vehicleKm !== null) {
-        formData.append('vehicle_km', occurrence.vehicleKm.toString());
-      }
 
       // Dados opcionais
       if (occurrence.receiverName) {
@@ -160,61 +79,48 @@ export const apiService = {
       }
 
       // Coordenadas GPS (se disponíveis)
-      if (occurrence.latitude) {
+      if (occurrence.latitude !== undefined) {
         formData.append('latitude', occurrence.latitude.toString());
       }
-      if (occurrence.longitude) {
+      if (occurrence.longitude !== undefined) {
         formData.append('longitude', occurrence.longitude.toString());
       }
 
-      // Anexar fotos se existirem
-      if (occurrence.photos && occurrence.photos.length > 0) {
-        console.log('Processando fotos para envio:', occurrence.photos);
+      // Se houver foto em base64 (offline), fazer upload primeiro
+      if (occurrence.photoBase64) {
+        console.log('Enviando foto em base64 para R2...');
+        const { photoUploadService } = await import('./photo-upload-service');
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `ocorrencia_${timestamp}.jpg`;
 
-        for (let i = 0; i < occurrence.photos.length; i++) {
-          const photoPath = occurrence.photos[i];
-          console.log(`Processando foto ${i}:`, photoPath);
-
-          try {
-            // Se for um data URL, converter para blob
-            if (photoPath.startsWith('data:')) {
-              console.log(`Foto ${i} é data URL, convertendo para blob...`);
-              const response = await fetch(photoPath);
-              const blob = await response.blob();
-              console.log(`Blob criado para foto ${i}:`, blob.size, 'bytes');
-              formData.append('photos', blob, `photo_${i}.jpg`);
-            } else {
-              // Para paths de arquivo, tentar carregar do localStorage ou cache
-              console.log(`Foto ${i} é path de arquivo:`, photoPath);
-
-              // Tentar buscar a foto no cache/storage local
-              try {
-                // Se o path for um nome de arquivo, podemos tentar recuperá-lo
-                // Por enquanto, vamos logar que não conseguimos processar
-                console.warn(`Não é possível acessar arquivo local: ${photoPath}`);
-                formData.append('photo_paths', photoPath);
-              } catch (fileError) {
-                console.error(`Erro ao acessar arquivo ${photoPath}:`, fileError);
-              }
-            }
-          } catch (photoError) {
-            console.error(`Erro ao processar foto ${i}:`, photoError);
-          }
+        try {
+          const r2Url = await photoUploadService.uploadBase64ToR2(occurrence.photoBase64, filename);
+          console.log('Foto enviada para R2:', r2Url);
+          formData.append('photo_urls', r2Url);
+        } catch (uploadError) {
+          console.error('Erro ao fazer upload da foto:', uploadError);
+          // Continua sem a foto se houver erro
         }
       } else {
-        console.log('Nenhuma foto para processar');
+        // Anexar URLs de fotos se existirem (conforme nova API)
+        const photoUrls = occurrence.photo_urls || occurrence.photos || [];
+        if (photoUrls.length > 0 && photoUrls[0] !== 'offline') {
+          console.log('Adicionando photo_urls:', photoUrls);
+          photoUrls.forEach((url) => {
+            formData.append('photo_urls', url);
+          });
+        } else {
+          console.log('Nenhuma photo_url para enviar');
+        }
       }
 
       console.log('Enviando FormData para API:', {
-        scanned_code: occurrence.scannedCode,
+        code: occurrence.scannedCode,
         occurrence_type: occurrence.occurrence,
-        roteiro_id: occurrence.roteiroId,
-        vehicle_plate: occurrence.vehiclePlate,
-        vehicle_km: occurrence.vehicleKm,
-        photos_count: occurrence.photos?.length || 0
+        photo_urls_count: occurrence.photo_urls?.length || 0
       });
 
-      const response = await fetch(`${API_BASE_URL}/api/`, {
+      const response = await fetch(getApiUrl(API_CONFIG.endpoints.occurrences), {
         method: 'POST',
         credentials: 'include',
         body: formData,

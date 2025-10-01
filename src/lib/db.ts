@@ -18,15 +18,13 @@ interface LogistikDB extends DBSchema {
       receiverName?: string;
       receiverDocument?: string;
       photos?: string[]; // Array de paths das fotos
+      photoBase64?: string; // Foto em base64 quando offline
       synced?: boolean;
-      roteiroId?: number;
       needsSync?: boolean; // Flag para indicar que precisa sincronizar
-      vehiclePlate?: string; // Placa do veículo
-      vehicleKm?: number; // Quilometragem do veículo
       latitude?: number; // Coordenada GPS latitude
       longitude?: number; // Coordenada GPS longitude
     };
-    indexes: { 'timestamp': string; 'roteiroId': number };
+    indexes: { 'timestamp': string };
   };
   [OFFLINE_STORE]: {
     key: number;
@@ -72,13 +70,6 @@ const initDB = async () => {
             autoIncrement: true,
           });
           store.createIndex('timestamp', 'timestamp');
-          store.createIndex('roteiroId', 'roteiroId');
-        } else if (oldVersion < 3) {
-          // Adicionar índice roteiroId para versões antigas
-          const store = db.transaction.objectStore(OCCURRENCES_STORE);
-          if (!store.indexNames.contains('roteiroId')) {
-            store.createIndex('roteiroId', 'roteiroId');
-          }
         }
         if (!db.objectStoreNames.contains(OFFLINE_STORE)) {
           const store = db.createObjectStore(OFFLINE_STORE, {
@@ -121,35 +112,21 @@ const initDB = async () => {
 };
 
 export const db = {
-  async addOccurrence(occurrence: Omit<LogistikDB['occurrences']['value'], 'id'>) {
+  async addOccurrence(occurrence: Omit<LogistikDB['occurrences']['value'], 'id'>, photoBase64?: string | null) {
     const db = await initDB();
-    console.log('addOccurrence - Dados recebidos:', occurrence);
 
-    // Se não tem roteiroId, pega o roteiro ativo do localStorage
-    if (!occurrence.roteiroId && typeof window !== 'undefined') {
-      const activeRoteiroData = localStorage.getItem('currentRoteiroData');
-      console.log('addOccurrence - Dados do localStorage:', activeRoteiroData);
+    const occurrenceToSave = {
+      ...occurrence,
+      photoBase64: photoBase64 || undefined, // Sempre salvar base64 se houver
+      synced: false // SEMPRE false quando criar nova ocorrência
+    };
 
-      if (activeRoteiroData) {
-        const data = JSON.parse(activeRoteiroData);
-        console.log('addOccurrence - Dados parseados:', data);
+    console.log('[DB] Salvando ocorrência:', { ...occurrenceToSave, photoBase64: photoBase64 ? 'EXISTS' : 'NULL' });
 
-        if (data.apiRoteiroId) {
-          occurrence.roteiroId = data.apiRoteiroId;
-          console.log('addOccurrence - roteiroId atribuído:', data.apiRoteiroId);
-        } else {
-          console.log('addOccurrence - ERRO: apiRoteiroId não encontrado!');
-        }
-      } else {
-        console.log('addOccurrence - ERRO: Nenhum roteiro ativo no localStorage!');
-      }
-    } else {
-      console.log('addOccurrence - roteiroId já existe:', occurrence.roteiroId);
-    }
+    const result = await db.add(OCCURRENCES_STORE, occurrenceToSave as any);
 
-    console.log('addOccurrence - Salvando ocorrência final:', occurrence);
-    const result = await db.add(OCCURRENCES_STORE, occurrence as any);
-    console.log('addOccurrence - Resultado do salvamento:', result);
+    console.log('[DB] Ocorrência salva com ID:', result, 'synced:', occurrenceToSave.synced);
+
     return result;
   },
   async addOfflineOccurrence(occurrence: Omit<LogistikDB['offline_occurrences']['value'], 'id'>) {
@@ -182,16 +159,9 @@ export const db = {
     const occurrence = await db.get(OCCURRENCES_STORE, id);
     if (occurrence) {
       occurrence.synced = synced;
-      await db.put(OCCURRENCES_STORE, occurrence);
-    }
-  },
-  async updateOccurrenceWithRoteiro(id: number, roteiroId: number, synced?: boolean) {
-    const db = await initDB();
-    const occurrence = await db.get(OCCURRENCES_STORE, id);
-    if (occurrence) {
-      occurrence.roteiroId = roteiroId;
-      if (synced !== undefined) {
-        occurrence.synced = synced;
+      // Se sincronizado, remover a foto base64 para economizar espaço
+      if (synced && occurrence.photoBase64) {
+        delete occurrence.photoBase64;
       }
       await db.put(OCCURRENCES_STORE, occurrence);
     }
@@ -201,83 +171,22 @@ export const db = {
     const allOccurrences = await db.getAll(OCCURRENCES_STORE);
     return allOccurrences.filter(occ => !occ.synced);
   },
-  async addRoteiro(roteiro: Omit<LogistikDB['roteiros']['value'], 'id'>) {
+  async deleteOccurrence(id: number) {
     const db = await initDB();
-    return db.add(ROTEIROS_STORE, roteiro as any);
+    await db.delete(OCCURRENCES_STORE, id);
   },
   async getAllRoteiros() {
-    let retries = 3;
-    while (retries > 0) {
-      try {
-        const db = await initDB();
-        console.log('Buscando roteiros no IndexedDB...');
-        const roteiros = await db.getAll(ROTEIROS_STORE);
-        console.log('Roteiros encontrados no DB:', roteiros);
-        return roteiros;
-      } catch (error) {
-        console.error(`Error getting roteiros (${4 - retries} attempt):`, error);
-        retries--;
-
-        if (error.message?.includes('database connection is closing') ||
-            error.message?.includes('transaction') ||
-            retries === 0) {
-          dbPromise = null;
-          if (retries > 0) {
-            // Wait a bit before retry
-            await new Promise(resolve => setTimeout(resolve, 100));
-            continue;
-          }
-        }
-
-        if (retries === 0) {
-          return [];
-        }
-      }
-    }
+    // Roteiros não são mais usados
     return [];
-  },
-  async getOccurrencesByRoteiro(roteiroId: number) {
-    const db = await initDB();
-    try {
-      return await db.getAllFromIndex(OCCURRENCES_STORE, 'roteiroId', roteiroId);
-    } catch (error) {
-      console.error('Error getting occurrences by roteiro:', error);
-      return [];
-    }
   },
   async getActiveOccurrences() {
     let retries = 3;
     while (retries > 0) {
       try {
         const db = await initDB();
-
-        // Pegar o roteiroId ativo do localStorage
-        if (typeof window !== 'undefined') {
-          const activeRoteiroData = localStorage.getItem('currentRoteiroData');
-          console.log('Dados do roteiro ativo no localStorage:', activeRoteiroData);
-
-          if (activeRoteiroData) {
-            const data = JSON.parse(activeRoteiroData);
-            console.log('Dados parseados do roteiro:', data);
-
-            if (data.apiRoteiroId) {
-              console.log(`Buscando ocorrências para o roteiro ID: ${data.apiRoteiroId}`);
-              // Buscar ocorrências do roteiro ativo - sempre retornar array (pode ser vazio)
-              const occurrences = await db.getAllFromIndex(OCCURRENCES_STORE, 'roteiroId', data.apiRoteiroId);
-              console.log(`Ocorrências encontradas para roteiro ${data.apiRoteiroId}:`, occurrences);
-              return occurrences || [];
-            } else {
-              console.log('Roteiro não tem apiRoteiroId');
-            }
-          } else {
-            console.log('Nenhum dado de roteiro ativo no localStorage');
-          }
-        }
-
-        // Se não há roteiro ativo no localStorage, retornar array vazio
-        // Não buscar ocorrências órfãs para evitar misturar roteiros
-        console.log('Retornando array vazio - sem roteiro ativo');
-        return [];
+        // Retornar todas as ocorrências
+        const occurrences = await db.getAll(OCCURRENCES_STORE);
+        return occurrences || [];
       } catch (error) {
         console.error(`Error getting active occurrences (${4 - retries} attempt):`, error);
         retries--;
@@ -287,7 +196,6 @@ export const db = {
             retries === 0) {
           dbPromise = null;
           if (retries > 0) {
-            // Wait a bit before retry
             await new Promise(resolve => setTimeout(resolve, 100));
             continue;
           }

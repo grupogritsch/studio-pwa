@@ -52,13 +52,17 @@ const formSchema = z.object({
     }
   });
 
-export function ScanForm() {
-  const [photoPreviews, setPhotoPreviews] = useState<Array<{path: string, preview: string}>>([]);
+interface ScanFormProps {
+  onBackToList?: () => void;
+}
+
+export function ScanForm({ onBackToList }: ScanFormProps) {
+  const [photoPreviews, setPhotoPreviews] = useState<Array<{path: string, preview: string, base64?: string}>>([]);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const [isOffline, setIsOffline] = useState(false);
   const searchParams = useSearchParams();
-  const isManualMode = searchParams.get('mode') === 'manual';
+  const isManualMode = true; // Sempre manual agora
   const codeFromUrl = searchParams.get('code');
   const router = useRouter();
   const [scannedCode, setScannedCode] = useState<string | null>(codeFromUrl);
@@ -119,7 +123,7 @@ export function ScanForm() {
   const getCurrentLocation = (): Promise<{latitude: number, longitude: number}> => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
-        reject(new Error('Geolocalização não suportada'));
+        resolve({ latitude: 0, longitude: 0 });
         return;
       }
 
@@ -136,9 +140,9 @@ export function ScanForm() {
           resolve({ latitude: 0, longitude: 0 });
         },
         {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 60000
+          enableHighAccuracy: false, // Mais rápido, menos preciso
+          timeout: 3000, // 3 segundos no máximo
+          maximumAge: 300000 // Aceita cache de até 5 minutos
         }
       );
     });
@@ -155,69 +159,37 @@ export function ScanForm() {
 
     const timestamp = new Date().toISOString();
 
-    // Obter dados do veículo do localStorage
-    let vehiclePlate = '';
-    let vehicleKm = 0;
-
-    const currentRoteiroData = localStorage.getItem('currentRoteiroData');
-    if (currentRoteiroData) {
-      const data = JSON.parse(currentRoteiroData);
-      vehiclePlate = data.vehiclePlate || '';
-      vehicleKm = data.vehicleKm || 0;
-    }
-
     // Obter coordenadas GPS
     const location = await getCurrentLocation();
+
+    // Pegar foto em base64 (SEMPRE salvar localmente)
+    const photoBase64 = photoPreviews.length > 0 && photoPreviews[0].base64
+      ? photoPreviews[0].base64
+      : null;
 
     const occurrenceData = {
         scannedCode: codeToUse,
         occurrence: values.occurrence,
         receiverName: values.receiverName,
         receiverDocument: values.receiverDocument,
-        photos: values.photos || [], // Array de paths das fotos
+        photos: photoBase64 ? ['pending'] : [],
         timestamp,
-        vehiclePlate,
-        vehicleKm,
         latitude: location.latitude,
         longitude: location.longitude,
         synced: false,
-        needsSync: true // Marcar para sincronização
+        needsSync: true
     };
 
     try {
-        console.log('Tentando salvar ocorrência:', occurrenceData);
+        // SEMPRE salvar no IndexedDB com base64 (offline-first)
+        await db.addOccurrence(occurrenceData, photoBase64);
 
-        // Sempre salvar no IndexedDB primeiro
-        const result = await db.addOccurrence(occurrenceData);
-        console.log('Resultado do salvamento local:', result);
-
-        // Se estiver online, tentar sincronizar imediatamente
-        if (navigator.onLine && !isOffline) {
-          console.log('Online - tentando sincronizar imediatamente...');
-
-          try {
-            const syncResult = await apiService.syncOccurrence(occurrenceData);
-
-            if (syncResult.success) {
-              // Marcar como sincronizado no IndexedDB
-              await db.updateOccurrenceSync(result as number, true);
-              console.log('Ocorrência sincronizada imediatamente com a API');
-
-            } else {
-              console.log('Falha na sincronização imediata:', syncResult.error);
-            }
-          } catch (syncError) {
-            console.error('Erro na sincronização imediata:', syncError);
-          }
+        // Voltar imediatamente para lista
+        if (onBackToList) {
+          onBackToList();
         } else {
-          console.log('Offline - salvando apenas localmente');
+          router.push('/');
         }
-
-        // Verificar se foi salvo realmente
-        const savedOccurrences = await db.getActiveOccurrences();
-        console.log('Ocorrências ativas após salvamento:', savedOccurrences);
-
-        router.push('/roteiro');
     } catch(error) {
         console.error("Failed to save occurrence to DB:", error);
         toast({
@@ -349,36 +321,37 @@ export function ScanForm() {
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0);
 
-        // Converter para blob para salvar como arquivo real
+        // Parar a câmera IMEDIATAMENTE após capturar a imagem
+        stopCamera();
+
+        // Converter para blob
         canvas.toBlob(async (blob) => {
           if (blob) {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const filename = `ocorrencia_${timestamp}.jpg`;
 
             try {
-              // Upload para R2 e obter URL
-              const r2Url = await uploadPhotoToR2(blob, filename);
+              // Comprimir rapidamente para uma resolução menor (mais rápido)
+              // Qualidade: 0.7 = boa qualidade mas arquivo menor
+              // Tamanho: 1280x720 = HD, suficiente para documentação
+              const compressedBase64 = await compressImage(blob, 0.7, 1280, 720);
 
-              // Comprimir para preview local (não armazenar no IndexedDB)
-              const compressedBase64 = await compressImage(blob, 0.7, 1280, 720); // Preview melhor qualidade
-
-              // Adicionar à lista de fotos
-              const newPhoto = { path: r2Url, preview: compressedBase64 };
+              const newPhoto = {
+                path: 'pending',
+                preview: compressedBase64,
+                base64: compressedBase64
+              };
               setPhotoPreviews(prev => [...prev, newPhoto]);
 
-              // Atualizar formulário com array de URLs do R2
               const currentPhotos = form.getValues('photos') || [];
-              const newPhotos = [...currentPhotos, r2Url];
-              form.setValue('photos', newPhotos, { shouldValidate: true, shouldDirty: true });
-
-              stopCamera();
+              form.setValue('photos', [...currentPhotos, 'pending'], { shouldValidate: true, shouldDirty: true });
 
             } catch (error) {
-              console.error('Erro ao salvar foto:', error);
+              console.error('Erro ao processar foto:', error);
               toast({
                 variant: "destructive",
                 title: "Erro",
-                description: "Erro ao salvar foto no dispositivo."
+                description: "Erro ao processar foto."
               });
             }
           }
@@ -465,22 +438,11 @@ export function ScanForm() {
   }, [stream]);
 
   return (
-    <div className="flex min-h-screen w-full flex-col">
+    <div className="flex w-full flex-col h-full">
       {showCamera && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col">
-          <div className="flex justify-between items-center p-4 bg-black/50">
-            <h3 className="text-white text-lg font-semibold">Tirar Foto</h3>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={stopCamera}
-              className="text-white hover:bg-white/10"
-            >
-              <X className="h-6 w-6" />
-            </Button>
-          </div>
-
-          <div className="flex-1 relative overflow-hidden">
+          {/* Vídeo fullscreen */}
+          <div className="flex-1 relative">
             <video
               ref={videoRef}
               autoPlay
@@ -491,35 +453,19 @@ export function ScanForm() {
             <canvas ref={canvasRef} className="hidden" />
           </div>
 
-          <div className="flex justify-center p-6 bg-black/50">
+          {/* Footer com botão centralizado */}
+          <div className="fixed bottom-0 left-0 right-0 flex justify-center p-6 z-50">
             <Button
               onClick={capturePhoto}
-              className="h-16 w-16 rounded-full bg-white hover:bg-gray-200 text-black shadow-lg"
+              className="h-16 w-16 rounded-full bg-white hover:bg-gray-200 shadow-lg"
             >
-              <Camera className="h-8 w-8" />
+              <Camera className="h-8 w-8 text-black" />
             </Button>
           </div>
         </div>
       )}
 
-      <header className="sticky top-0 z-10 flex h-20 items-center justify-between gap-4 border-b px-4 shadow-sm md:px-6 w-full" style={{backgroundColor: '#222E3C'}}>
-        <div style={{
-          fontSize: '32px',
-          fontWeight: 'bold',
-          fontFamily: 'Roboto Bold',
-          letterSpacing: '1px',
-        }}>
-          <span style={{color:'#ffffff'}}>LOGISTI</span><span style={{ color: '#FFA500' }}>K</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {isOffline ? (
-            <WifiOff className="h-5 w-5 text-white" />
-          ) : (
-            <Wifi className="h-5 w-5 text-white" />
-          )}
-        </div>
-      </header>
-      <main className="flex-1 flex flex-col items-center justify-start gap-4 p-4 md:gap-8 md:p-10 w-full pb-24 min-h-0">
+      <main className="flex flex-col items-center justify-start gap-4 p-4 md:gap-8 md:p-10 w-full pb-24">
         <div className="w-full max-w-2xl">
         <Form {...form}>
             <form id="occurrence-form" onSubmit={form.handleSubmit(onSubmit)}>
@@ -628,7 +574,7 @@ export function ScanForm() {
         </div>
       </main>
 
-      <footer className="sticky bottom-0 left-0 right-0 z-10 flex justify-center items-center gap-4 border-t p-4 w-full" style={{backgroundColor: '#222E3C'}}>
+      <footer className="fixed bottom-0 left-0 right-0 z-10 flex justify-center items-center gap-4 border-t p-4 w-full" style={{backgroundColor: '#222E3C'}}>
         <Button
             variant="default"
             className="h-16 w-16 rounded-full shadow-lg"
@@ -653,15 +599,6 @@ export function ScanForm() {
             ) : (
                 <Send className="h-10 w-10 text-black" />
             )}
-        </Button>
-
-        <Button
-            variant="outline"
-            className="h-16 w-16 rounded-full shadow-lg text-black border-white/20 hover:bg-white/10"
-            onClick={() => router.push('/roteiro')}
-            aria-label="Fechar"
-        >
-            <X className="h-10 w-10 text-black" />
         </Button>
 
         {/* Input file oculto como fallback */}
