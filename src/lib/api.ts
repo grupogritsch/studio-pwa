@@ -10,7 +10,8 @@ export interface OccurrenceData {
   receiverDocument?: string;
   photos?: string[];
   photo_urls?: string[];
-  photoBase64?: string;
+  photoBase64?: string; // Deprecated - usar photosBase64
+  photosBase64?: string[]; // Array de fotos em base64
   latitude?: number;
   longitude?: number;
   synced?: boolean;
@@ -86,8 +87,33 @@ export const apiService = {
         formData.append('longitude', occurrence.longitude.toString());
       }
 
-      // Se houver foto em base64 (offline), fazer upload primeiro
-      if (occurrence.photoBase64) {
+      // Se houver fotos em base64 (offline), fazer upload primeiro
+      if (occurrence.photosBase64 && occurrence.photosBase64.length > 0) {
+        console.log(`Enviando ${occurrence.photosBase64.length} fotos em base64 para R2...`);
+        const { photoUploadService } = await import('./photo-upload-service');
+
+        try {
+          const uploadedUrls: string[] = [];
+
+          for (let i = 0; i < occurrence.photosBase64.length; i++) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `ocorrencia_${timestamp}_${i + 1}.jpg`;
+
+            const r2Url = await photoUploadService.uploadBase64ToR2(occurrence.photosBase64[i], filename);
+            console.log(`Foto ${i + 1} enviada para R2:`, r2Url);
+            uploadedUrls.push(r2Url);
+          }
+
+          // Adicionar todas as URLs ao FormData
+          uploadedUrls.forEach(url => {
+            formData.append('photo_urls', url);
+          });
+        } catch (uploadError) {
+          console.error('Erro ao fazer upload das fotos:', uploadError);
+          // Continua sem as fotos se houver erro
+        }
+      } else if (occurrence.photoBase64) {
+        // Compatibilidade com código antigo (uma única foto)
         console.log('Enviando foto em base64 para R2...');
         const { photoUploadService } = await import('./photo-upload-service');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -104,7 +130,7 @@ export const apiService = {
       } else {
         // Anexar URLs de fotos se existirem (conforme nova API)
         const photoUrls = occurrence.photo_urls || occurrence.photos || [];
-        if (photoUrls.length > 0 && photoUrls[0] !== 'offline') {
+        if (photoUrls.length > 0 && photoUrls[0] !== 'offline' && !photoUrls[0].startsWith('pending')) {
           console.log('Adicionando photo_urls:', photoUrls);
           photoUrls.forEach((url) => {
             formData.append('photo_urls', url);

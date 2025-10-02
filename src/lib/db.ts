@@ -18,7 +18,8 @@ interface LogistikDB extends DBSchema {
       receiverName?: string;
       receiverDocument?: string;
       photos?: string[]; // Array de paths das fotos
-      photoBase64?: string; // Foto em base64 quando offline
+      photoBase64?: string; // Foto em base64 quando offline (deprecated)
+      photosBase64?: string[]; // Array de fotos em base64 quando offline
       synced?: boolean;
       needsSync?: boolean; // Flag para indicar que precisa sincronizar
       latitude?: number; // Coordenada GPS latitude
@@ -117,11 +118,13 @@ export const db = {
 
     const occurrenceToSave = {
       ...occurrence,
-      photoBase64: photoBase64 || undefined, // Sempre salvar base64 se houver
       synced: false // SEMPRE false quando criar nova ocorrência
     };
 
-    console.log('[DB] Salvando ocorrência:', { ...occurrenceToSave, photoBase64: photoBase64 ? 'EXISTS' : 'NULL' });
+    console.log('[DB] Salvando ocorrência:', {
+      ...occurrenceToSave,
+      photosBase64Count: occurrenceToSave.photosBase64?.length || 0
+    });
 
     const result = await db.add(OCCURRENCES_STORE, occurrenceToSave as any);
 

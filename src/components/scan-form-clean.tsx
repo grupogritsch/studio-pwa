@@ -193,17 +193,18 @@ export function ScanForm({ onBackToList, mode = 'manual' }: ScanFormProps) {
     // Obter coordenadas GPS
     const location = await getCurrentLocation();
 
-    // Pegar foto em base64 (SEMPRE salvar localmente)
-    const photoBase64 = photoPreviews.length > 0 && photoPreviews[0].base64
-      ? photoPreviews[0].base64
-      : null;
+    // Pegar todas as fotos em base64 (SEMPRE salvar localmente)
+    const photosBase64 = photoPreviews
+      .filter(p => p.base64)
+      .map(p => p.base64!);
 
     const occurrenceData = {
         scannedCode: fullCodeToUse, // Enviar código completo para API
         occurrence: values.occurrence,
         receiverName: values.receiverName,
         receiverDocument: values.receiverDocument,
-        photos: photoBase64 ? ['pending'] : [],
+        photos: photosBase64.length > 0 ? photosBase64.map((_, i) => `pending_${i}`) : [],
+        photosBase64: photosBase64, // Array de todas as fotos em base64
         timestamp,
         latitude: location.latitude,
         longitude: location.longitude,
@@ -213,7 +214,7 @@ export function ScanForm({ onBackToList, mode = 'manual' }: ScanFormProps) {
 
     try {
         // SEMPRE salvar no IndexedDB com base64 (offline-first)
-        await db.addOccurrence(occurrenceData, photoBase64);
+        await db.addOccurrence(occurrenceData, null);
 
         // Voltar imediatamente para lista
         if (onBackToList) {
