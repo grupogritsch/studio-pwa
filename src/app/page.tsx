@@ -158,11 +158,37 @@ export default function Home() {
   useEffect(() => {
     const handleFocus = () => {
       loadData();
+
+      // Verificar se deve mostrar mensagem de sucesso
+      if (typeof window !== 'undefined') {
+        const showSuccess = localStorage.getItem('showSuccessMessage');
+        if (showSuccess === 'true') {
+          localStorage.removeItem('showSuccessMessage');
+          toast({
+            title: "Ocorrência gerada com sucesso",
+            className: "bg-green-500 text-white border-green-600",
+            duration: 2000,
+          });
+        }
+      }
     };
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         loadData();
+
+        // Verificar se deve mostrar mensagem de sucesso
+        if (typeof window !== 'undefined') {
+          const showSuccess = localStorage.getItem('showSuccessMessage');
+          if (showSuccess === 'true') {
+            localStorage.removeItem('showSuccessMessage');
+            toast({
+              title: "Ocorrência gerada com sucesso",
+              className: "bg-green-500 text-white border-green-600",
+              duration: 2000,
+            });
+          }
+        }
       }
     };
 
@@ -207,6 +233,21 @@ export default function Home() {
     setViewMode('list');
     // Recarregar dados quando voltar para lista
     loadData();
+
+    // Verificar se deve mostrar mensagem de sucesso
+    if (typeof window !== 'undefined') {
+      const showSuccess = localStorage.getItem('showSuccessMessage');
+      if (showSuccess === 'true') {
+        localStorage.removeItem('showSuccessMessage');
+        setTimeout(() => {
+          toast({
+            title: "Ocorrência gerada com sucesso",
+            className: "bg-green-500 text-white border-green-600",
+            duration: 2000,
+          });
+        }, 100);
+      }
+    }
   };
 
   const handleDeleteOccurrence = async (id: number) => {

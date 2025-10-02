@@ -215,21 +215,17 @@ export function ScanForm({ onBackToList, mode = 'manual' }: ScanFormProps) {
         // SEMPRE salvar no IndexedDB com base64 (offline-first)
         await db.addOccurrence(occurrenceData, null);
 
-        // Mostrar mensagem de sucesso verde por 2 segundos
-        toast({
-            title: "Ocorrência gerada com sucesso",
-            className: "bg-green-500 text-white border-green-600",
-            duration: 2000,
-        });
+        // Salvar flag de sucesso no localStorage para mostrar mensagem na próxima tela
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('showSuccessMessage', 'true');
+        }
 
-        // Aguardar 2 segundos antes de voltar
-        setTimeout(() => {
-          if (onBackToList) {
-            onBackToList();
-          } else {
-            router.push('/');
-          }
-        }, 2000);
+        // Voltar imediatamente para lista
+        if (onBackToList) {
+          onBackToList();
+        } else {
+          router.push('/');
+        }
     } catch(error) {
         console.error("Failed to save occurrence to DB:", error);
         toast({
