@@ -158,29 +158,11 @@ export default function Home() {
   useEffect(() => {
     const handleFocus = () => {
       loadData();
-
-      // Verificar se há código escaneado no localStorage
-      if (typeof window !== 'undefined') {
-        const scannedCodeFull = localStorage.getItem('scannedCodeFull');
-        if (scannedCodeFull) {
-          // Abrir formulário manual
-          setViewMode('manual');
-        }
-      }
     };
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         loadData();
-
-        // Verificar se há código escaneado no localStorage
-        if (typeof window !== 'undefined') {
-          const scannedCodeFull = localStorage.getItem('scannedCodeFull');
-          if (scannedCodeFull) {
-            // Abrir formulário manual
-            setViewMode('manual');
-          }
-        }
       }
     };
 
@@ -222,17 +204,6 @@ export default function Home() {
   };
 
   const handleBackToList = () => {
-    // Verificar se há código escaneado no localStorage
-    if (typeof window !== 'undefined') {
-      const scannedCodeFull = localStorage.getItem('scannedCodeFull');
-      if (scannedCodeFull) {
-        // Não limpar ainda - deixar para o formulário pegar
-        // Abrir formulário manual
-        setViewMode('manual');
-        return;
-      }
-    }
-
     setViewMode('list');
     // Recarregar dados quando voltar para lista
     loadData();

@@ -54,9 +54,10 @@ const formSchema = z.object({
 
 interface ScanFormProps {
   onBackToList?: () => void;
+  mode?: 'scan' | 'manual';
 }
 
-export function ScanForm({ onBackToList }: ScanFormProps) {
+export function ScanForm({ onBackToList, mode = 'manual' }: ScanFormProps) {
   const [photoPreviews, setPhotoPreviews] = useState<Array<{path: string, preview: string, base64?: string}>>([]);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
@@ -84,7 +85,7 @@ export function ScanForm({ onBackToList }: ScanFormProps) {
   const initialCodes = getInitialCodes();
   const [scannedCodeFull, setScannedCodeFull] = useState<string>(initialCodes.fullCode);
   const [scannedCode, setScannedCode] = useState<string | null>(initialCodes.displayCode);
-  const [isFromScan, setIsFromScan] = useState<boolean>(!!initialCodes.fullCode && initialCodes.fullCode !== initialCodes.displayCode);
+  const isFromScan = mode === 'scan';
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -93,7 +94,7 @@ export function ScanForm({ onBackToList }: ScanFormProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      scannedCode: isFromScan ? '' : initialCodes.displayCode,
+      scannedCode: '',
       occurrence: '',
       photos: [],
       receiverName: '',

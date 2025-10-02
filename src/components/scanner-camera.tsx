@@ -72,12 +72,8 @@ export function ScannerCamera({ onBackToList }: ScannerCameraProps) {
                     localStorage.setItem('scannedCodeDisplay', displayCode);
                   }
 
-                  // Voltar para tela principal que vai abrir o formulário
-                  if (onBackToList) {
-                    onBackToList();
-                  } else {
-                    router.push('/');
-                  }
+                  // Redirecionar para a página de scan
+                  router.push('/scan');
                 }
               });
               scannerControlsRef.current = controls;
