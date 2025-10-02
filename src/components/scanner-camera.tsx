@@ -19,17 +19,21 @@ export function ScannerCamera({ onBackToList }: ScannerCameraProps) {
   const scannerControlsRef = useRef<IScannerControls | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const extractCTeCode = (scannedText: string): string => {
+  const extractCTeCode = (scannedText: string): { fullCode: string; displayCode: string } => {
     try {
       if (scannedText.startsWith('http') && scannedText.includes('chCTe=')) {
         const match = scannedText.match(/chCTe=([^&]+)/);
         if (match && match[1]) {
-          return match[1];
+          const fullCode = match[1];
+          // Pegar caracteres 25-34 (índice 24-33 em zero-based)
+          const displayCode = fullCode.length >= 34 ? fullCode.substring(24, 34) : fullCode;
+          return { fullCode, displayCode };
         }
       }
-      return scannedText;
+      // Se não for URL, retornar o código como está
+      return { fullCode: scannedText, displayCode: scannedText };
     } catch (error) {
-      return scannedText;
+      return { fullCode: scannedText, displayCode: scannedText };
     }
   };
 
@@ -60,11 +64,12 @@ export function ScannerCamera({ onBackToList }: ScannerCameraProps) {
                   scannerControlsRef.current = null;
 
                   const rawCode = result.getText();
-                  const extractedCode = extractCTeCode(rawCode);
+                  const { fullCode, displayCode } = extractCTeCode(rawCode);
 
-                  // Salvar código no localStorage para o formulário pegar
+                  // Salvar ambos os códigos no localStorage
                   if (typeof window !== 'undefined') {
-                    localStorage.setItem('scannedCode', extractedCode);
+                    localStorage.setItem('scannedCodeFull', fullCode);
+                    localStorage.setItem('scannedCodeDisplay', displayCode);
                   }
 
                   // Voltar para tela principal que vai abrir o formulário
