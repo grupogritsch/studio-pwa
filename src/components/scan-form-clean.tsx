@@ -82,14 +82,24 @@ export function ScanForm({ onBackToList, mode = 'manual' }: ScanFormProps) {
     return { fullCode: urlCode, displayCode: urlCode };
   };
 
-  const initialCodes = getInitialCodes();
-  const [scannedCodeFull, setScannedCodeFull] = useState<string>(initialCodes.fullCode);
-  const [scannedCode, setScannedCode] = useState<string | null>(initialCodes.displayCode);
+  const [scannedCodeFull, setScannedCodeFull] = useState<string>('');
+  const [scannedCode, setScannedCode] = useState<string | null>(null);
+  const [displayCode, setDisplayCode] = useState<string>('');
   const isFromScan = mode === 'scan';
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Carregar códigos do localStorage quando componente montar
+  useEffect(() => {
+    if (mode === 'scan') {
+      const codes = getInitialCodes();
+      setScannedCodeFull(codes.fullCode);
+      setDisplayCode(codes.displayCode);
+      console.log('Códigos carregados do localStorage:', codes);
+    }
+  }, [mode]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -512,7 +522,7 @@ export function ScanForm({ onBackToList, mode = 'manual' }: ScanFormProps) {
                           <FormLabel>Código</FormLabel>
                           <FormControl>
                             <Input
-                              placeholder={isFromScan ? initialCodes.displayCode : "Digite o código manualmente"}
+                              placeholder={isFromScan ? displayCode : "Digite o código manualmente"}
                               className="input-custom"
                               {...field}
                               disabled={isFromScan}
