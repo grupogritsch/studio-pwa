@@ -65,7 +65,20 @@ export function ScanForm({ onBackToList }: ScanFormProps) {
   const isManualMode = true; // Sempre manual agora
   const codeFromUrl = searchParams.get('code');
   const router = useRouter();
-  const [scannedCode, setScannedCode] = useState<string | null>(codeFromUrl);
+
+  // Pegar código do localStorage ou URL
+  const getInitialCode = () => {
+    if (typeof window !== 'undefined') {
+      const storedCode = localStorage.getItem('scannedCode');
+      if (storedCode) {
+        localStorage.removeItem('scannedCode');
+        return storedCode;
+      }
+    }
+    return codeFromUrl || '';
+  };
+
+  const [scannedCode, setScannedCode] = useState<string | null>(getInitialCode());
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -74,7 +87,7 @@ export function ScanForm({ onBackToList }: ScanFormProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      scannedCode: codeFromUrl || '',
+      scannedCode: getInitialCode(),
       occurrence: '',
       photos: [],
       receiverName: '',

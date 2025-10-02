@@ -158,11 +158,33 @@ export default function Home() {
   useEffect(() => {
     const handleFocus = () => {
       loadData();
+
+      // Verificar se há código escaneado no localStorage
+      if (typeof window !== 'undefined') {
+        const scannedCode = localStorage.getItem('scannedCode');
+        if (scannedCode) {
+          // Limpar do localStorage
+          localStorage.removeItem('scannedCode');
+          // Abrir formulário manual
+          setViewMode('manual');
+        }
+      }
     };
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         loadData();
+
+        // Verificar se há código escaneado no localStorage
+        if (typeof window !== 'undefined') {
+          const scannedCode = localStorage.getItem('scannedCode');
+          if (scannedCode) {
+            // Limpar do localStorage
+            localStorage.removeItem('scannedCode');
+            // Abrir formulário manual
+            setViewMode('manual');
+          }
+        }
       }
     };
 

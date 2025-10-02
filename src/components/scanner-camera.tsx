@@ -62,7 +62,17 @@ export function ScannerCamera({ onBackToList }: ScannerCameraProps) {
                   const rawCode = result.getText();
                   const extractedCode = extractCTeCode(rawCode);
 
-                  router.push(`/occurrence?code=${encodeURIComponent(extractedCode)}`);
+                  // Salvar código no localStorage para o formulário pegar
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('scannedCode', extractedCode);
+                  }
+
+                  // Voltar para tela principal que vai abrir o formulário
+                  if (onBackToList) {
+                    onBackToList();
+                  } else {
+                    router.push('/');
+                  }
                 }
               });
               scannerControlsRef.current = controls;
