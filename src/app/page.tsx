@@ -226,6 +226,17 @@ export default function Home() {
   };
 
   const handleBackToList = () => {
+    // Verificar se há código escaneado no localStorage
+    if (typeof window !== 'undefined') {
+      const scannedCode = localStorage.getItem('scannedCode');
+      if (scannedCode) {
+        // Não limpar ainda - deixar para o formulário pegar
+        // Abrir formulário manual
+        setViewMode('manual');
+        return;
+      }
+    }
+
     setViewMode('list');
     // Recarregar dados quando voltar para lista
     loadData();
