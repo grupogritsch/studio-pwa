@@ -67,18 +67,24 @@ export function ScanForm({ onBackToList }: ScanFormProps) {
   const router = useRouter();
 
   // Pegar código do localStorage ou URL
-  const getInitialCode = () => {
+  const getInitialCodes = () => {
     if (typeof window !== 'undefined') {
-      const storedCode = localStorage.getItem('scannedCode');
-      if (storedCode) {
-        localStorage.removeItem('scannedCode');
-        return storedCode;
+      const storedCodeFull = localStorage.getItem('scannedCodeFull');
+      const storedCodeDisplay = localStorage.getItem('scannedCodeDisplay');
+      if (storedCodeFull && storedCodeDisplay) {
+        localStorage.removeItem('scannedCodeFull');
+        localStorage.removeItem('scannedCodeDisplay');
+        return { fullCode: storedCodeFull, displayCode: storedCodeDisplay };
       }
     }
-    return codeFromUrl || '';
+    const urlCode = codeFromUrl || '';
+    return { fullCode: urlCode, displayCode: urlCode };
   };
 
-  const [scannedCode, setScannedCode] = useState<string | null>(getInitialCode());
+  const initialCodes = getInitialCodes();
+  const [scannedCodeFull, setScannedCodeFull] = useState<string>(initialCodes.fullCode);
+  const [scannedCode, setScannedCode] = useState<string | null>(initialCodes.displayCode);
+  const [isFromScan, setIsFromScan] = useState<boolean>(!!initialCodes.fullCode && initialCodes.fullCode !== initialCodes.displayCode);
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -87,7 +93,7 @@ export function ScanForm({ onBackToList }: ScanFormProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      scannedCode: getInitialCode(),
+      scannedCode: isFromScan ? '' : initialCodes.displayCode,
       occurrence: '',
       photos: [],
       receiverName: '',
@@ -164,8 +170,9 @@ export function ScanForm({ onBackToList }: ScanFormProps) {
   const saveOccurrence = async (values: z.infer<typeof formSchema>) => {
     if (typeof window === 'undefined') return;
 
-    const codeToUse = isManualMode ? values.scannedCode : scannedCode;
-    if (!codeToUse) {
+    // Usar código completo para API, se disponível
+    const fullCodeToUse = scannedCodeFull || values.scannedCode;
+    if (!fullCodeToUse) {
       toast({ variant: "destructive", title: "Erro", description: "Código é obrigatório." });
       return;
     }
@@ -181,7 +188,7 @@ export function ScanForm({ onBackToList }: ScanFormProps) {
       : null;
 
     const occurrenceData = {
-        scannedCode: codeToUse,
+        scannedCode: fullCodeToUse, // Enviar código completo para API
         occurrence: values.occurrence,
         receiverName: values.receiverName,
         receiverDocument: values.receiverDocument,
@@ -215,8 +222,8 @@ export function ScanForm({ onBackToList }: ScanFormProps) {
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
     startTransition(async () => {
-      const codeToUse = isManualMode ? values.scannedCode : scannedCode;
-      if (!codeToUse) {
+      const fullCodeToUse = scannedCodeFull || values.scannedCode;
+      if (!fullCodeToUse) {
          toast({ variant: "destructive", title: "Erro", description: "Código é obrigatório." });
          return;
       }
@@ -504,12 +511,15 @@ export function ScanForm({ onBackToList }: ScanFormProps) {
                           <FormLabel>Código</FormLabel>
                           <FormControl>
                             <Input
-                              placeholder="Digite o código manualmente"
+                              placeholder={isFromScan ? initialCodes.displayCode : "Digite o código manualmente"}
                               className="input-custom"
                               {...field}
+                              disabled={isFromScan}
                               onChange={(e) => {
                                 field.onChange(e);
                                 setScannedCode(e.target.value);
+                                // Quando digitar manualmente, atualizar também o código completo
+                                setScannedCodeFull(e.target.value);
                               }}
                             />
                           </FormControl>

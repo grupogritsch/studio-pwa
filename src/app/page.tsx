@@ -161,10 +161,8 @@ export default function Home() {
 
       // Verificar se há código escaneado no localStorage
       if (typeof window !== 'undefined') {
-        const scannedCode = localStorage.getItem('scannedCode');
-        if (scannedCode) {
-          // Limpar do localStorage
-          localStorage.removeItem('scannedCode');
+        const scannedCodeFull = localStorage.getItem('scannedCodeFull');
+        if (scannedCodeFull) {
           // Abrir formulário manual
           setViewMode('manual');
         }
@@ -177,10 +175,8 @@ export default function Home() {
 
         // Verificar se há código escaneado no localStorage
         if (typeof window !== 'undefined') {
-          const scannedCode = localStorage.getItem('scannedCode');
-          if (scannedCode) {
-            // Limpar do localStorage
-            localStorage.removeItem('scannedCode');
+          const scannedCodeFull = localStorage.getItem('scannedCodeFull');
+          if (scannedCodeFull) {
             // Abrir formulário manual
             setViewMode('manual');
           }
@@ -228,8 +224,8 @@ export default function Home() {
   const handleBackToList = () => {
     // Verificar se há código escaneado no localStorage
     if (typeof window !== 'undefined') {
-      const scannedCode = localStorage.getItem('scannedCode');
-      if (scannedCode) {
+      const scannedCodeFull = localStorage.getItem('scannedCodeFull');
+      if (scannedCodeFull) {
         // Não limpar ainda - deixar para o formulário pegar
         // Abrir formulário manual
         setViewMode('manual');
