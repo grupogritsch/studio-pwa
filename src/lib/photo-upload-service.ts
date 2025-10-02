@@ -20,7 +20,7 @@ export class PhotoUploadService {
       console.log(`Image size: ${(base64Data.length * 0.75 / 1024).toFixed(2)}KB`);
 
       // Send to Django API
-      const response = await fetch(getApiUrl('/api/occurrences/upload-photo/'), {
+      const response = await fetch(getApiUrl('/api/occurrence/upload-photo/'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

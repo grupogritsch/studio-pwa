@@ -6,7 +6,7 @@ export const API_CONFIG = {
     login: '/api/auth/login/',
     logout: '/api/auth/logout/',
     verify: '/api/auth/verify/',
-    occurrences: '/api/occurrences/',
+    occurrences: '/api/occurrence/',
   }
 };
 
