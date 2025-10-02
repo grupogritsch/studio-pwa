@@ -121,14 +121,7 @@ export const db = {
       synced: false // SEMPRE false quando criar nova ocorrência
     };
 
-    console.log('[DB] Salvando ocorrência:', {
-      ...occurrenceToSave,
-      photosBase64Count: occurrenceToSave.photosBase64?.length || 0
-    });
-
     const result = await db.add(OCCURRENCES_STORE, occurrenceToSave as any);
-
-    console.log('[DB] Ocorrência salva com ID:', result, 'synced:', occurrenceToSave.synced);
 
     return result;
   },

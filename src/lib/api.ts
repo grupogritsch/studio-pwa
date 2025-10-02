@@ -89,7 +89,6 @@ export const apiService = {
 
       // Se houver fotos em base64 (offline), fazer upload primeiro
       if (occurrence.photosBase64 && occurrence.photosBase64.length > 0) {
-        console.log(`Enviando ${occurrence.photosBase64.length} fotos em base64 para R2...`);
         const { photoUploadService } = await import('./photo-upload-service');
 
         try {
@@ -100,7 +99,6 @@ export const apiService = {
             const filename = `ocorrencia_${timestamp}_${i + 1}.jpg`;
 
             const r2Url = await photoUploadService.uploadBase64ToR2(occurrence.photosBase64[i], filename);
-            console.log(`Foto ${i + 1} enviada para R2:`, r2Url);
             uploadedUrls.push(r2Url);
           }
 
@@ -114,14 +112,12 @@ export const apiService = {
         }
       } else if (occurrence.photoBase64) {
         // Compatibilidade com código antigo (uma única foto)
-        console.log('Enviando foto em base64 para R2...');
         const { photoUploadService } = await import('./photo-upload-service');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const filename = `ocorrencia_${timestamp}.jpg`;
 
         try {
           const r2Url = await photoUploadService.uploadBase64ToR2(occurrence.photoBase64, filename);
-          console.log('Foto enviada para R2:', r2Url);
           formData.append('photo_urls', r2Url);
         } catch (uploadError) {
           console.error('Erro ao fazer upload da foto:', uploadError);
@@ -131,20 +127,11 @@ export const apiService = {
         // Anexar URLs de fotos se existirem (conforme nova API)
         const photoUrls = occurrence.photo_urls || occurrence.photos || [];
         if (photoUrls.length > 0 && photoUrls[0] !== 'offline' && !photoUrls[0].startsWith('pending')) {
-          console.log('Adicionando photo_urls:', photoUrls);
           photoUrls.forEach((url) => {
             formData.append('photo_urls', url);
           });
-        } else {
-          console.log('Nenhuma photo_url para enviar');
         }
       }
-
-      console.log('Enviando FormData para API:', {
-        code: occurrence.scannedCode,
-        occurrence_type: occurrence.occurrence,
-        photo_urls_count: occurrence.photo_urls?.length || 0
-      });
 
       const response = await fetch(getApiUrl(API_CONFIG.endpoints.occurrences), {
         method: 'POST',
@@ -153,20 +140,15 @@ export const apiService = {
         // Não definir Content-Type para FormData - o browser define automaticamente
       });
 
-      console.log('Resposta da API:', response.status, response.statusText);
-
       if (response.ok) {
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.indexOf('application/json') !== -1) {
           const result = await response.json();
-          console.log('Ocorrência sincronizada com sucesso:', result);
           return {
             success: true,
             id: result.occurrence_id || occurrence.id
           };
         } else {
-          const errorText = await response.text();
-          console.error('Received non-JSON response:', errorText);
           return {
             success: false,
             error: 'Server returned non-JSON response.'
@@ -174,7 +156,6 @@ export const apiService = {
         }
       } else {
         const errorText = await response.text();
-        console.error('Erro na API Django:', response.status, errorText);
         return {
           success: false,
           error: `Erro ${response.status}: ${errorText}`

@@ -97,7 +97,6 @@ export function ScanForm({ onBackToList, mode = 'manual' }: ScanFormProps) {
       const codes = getInitialCodes();
       setScannedCodeFull(codes.fullCode);
       setDisplayCode(codes.displayCode);
-      console.log('Códigos carregados do localStorage:', codes);
     }
   }, [mode]);
 
@@ -216,12 +215,21 @@ export function ScanForm({ onBackToList, mode = 'manual' }: ScanFormProps) {
         // SEMPRE salvar no IndexedDB com base64 (offline-first)
         await db.addOccurrence(occurrenceData, null);
 
-        // Voltar imediatamente para lista
-        if (onBackToList) {
-          onBackToList();
-        } else {
-          router.push('/');
-        }
+        // Mostrar mensagem de sucesso verde por 2 segundos
+        toast({
+            title: "Ocorrência gerada com sucesso",
+            className: "bg-green-500 text-white border-green-600",
+            duration: 2000,
+        });
+
+        // Aguardar 2 segundos antes de voltar
+        setTimeout(() => {
+          if (onBackToList) {
+            onBackToList();
+          } else {
+            router.push('/');
+          }
+        }, 2000);
     } catch(error) {
         console.error("Failed to save occurrence to DB:", error);
         toast({

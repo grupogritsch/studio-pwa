@@ -16,9 +16,6 @@ export class PhotoUploadService {
         filename = `ocorrencia_${timestamp}_${randomId}.jpg`;
       }
 
-      console.log(`Uploading photo via Django API: ${filename}`);
-      console.log(`Image size: ${(base64Data.length * 0.75 / 1024).toFixed(2)}KB`);
-
       // Send to Django API
       const response = await fetch(getApiUrl('/api/occurrence/upload-photo/'), {
         method: 'POST',
@@ -32,11 +29,7 @@ export class PhotoUploadService {
         })
       });
 
-      console.log('Django API response status:', response.status);
-      console.log('Django API response headers:', Object.fromEntries(response.headers.entries()));
-
       const responseText = await response.text();
-      console.log('Django API raw response:', responseText);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${responseText}`);
@@ -45,14 +38,11 @@ export class PhotoUploadService {
       let result;
       try {
         result = JSON.parse(responseText);
-        console.log('Django API parsed response:', result);
       } catch (parseError) {
-        console.error('Failed to parse JSON response:', parseError);
         throw new Error(`Invalid JSON response: ${responseText.substring(0, 200)}...`);
       }
 
       if (result.success && result.url) {
-        console.log(`Photo uploaded successfully: ${result.url}`);
         return result.url;
       } else {
         throw new Error(result.error || 'Upload failed');
@@ -78,10 +68,8 @@ export class PhotoUploadService {
 
     try {
       const urls = await Promise.all(uploadPromises);
-      console.log(`Successfully uploaded ${urls.length} images via Django`);
       return urls;
     } catch (error) {
-      console.error('Error uploading multiple images:', error);
       throw error;
     }
   }
